@@ -1,0 +1,101 @@
+\documentclass[a4paper,11pt,final]{article}
+\input{preamble}
+\input{definitions}
+\input{abs}
+\usepackage{amsmath}
+\usepackage{amsthm}
+
+\newcommand{\deliverableTitle}{ABSUnit -- ABS Testing Framework} 
+
+\title{\deliverableTitle}
+
+\author{Peter Y. H. Wong}
+
+\begin{document}
+
+\maketitle 
+
+\section{Introduction}
+This document contains ideas and notes on how to implement a JUnit-like testing
+framework (test harness) for ABS language.
+
+There are essentially three main ingredients for this framework
+\begin{enumerate}
+  \item Test Runner -- should be in ABS, facilitate simulation with different
+  resource scenarios for example.
+  \begin{itemize}
+    \item How does a test runner find out which ABS classes are 'test classes' 
+    \item Support 'Test' and 'Theories'? -- with Theories, test methods are
+    executed over one or more pieces of test data.
+  \end{itemize}
+  \item Rules to specify/implement test cases
+  \begin{itemize}
+    \item name convention: Methods whose name have the prefix 'test' and classes whose name have the suffix 'Test'
+    \item annotations 
+    \item implementing a specific interface
+  \end{itemize}
+  \item Support assertion on test oracle, there is already an assertion language
+  (assert with Boolean expression), but should we allow more complex test
+  assertion such as matcher composition similar to Java's Hamcrest library
+  (\url{http://code.google.com/p/hamcrest/})
+\end{enumerate}
+
+In addition we need to consider the following for usability:
+\begin{enumerate}
+  \item Error logging such as stack traces, log files
+  \item Maven integration (see maven-support)
+\end{enumerate}
+
+\noindent Naming convention:
+\begin{absexamplen}
+module Test;
+
+import * from TestLib;
+
+class SomeTest {
+
+  Unit testSomeMethod() {
+  	 ..
+  	 assert(...);
+  }
+}
+\end{absexamplen}
+
+\noindent Annotations
+\begin{absexamplen}
+module Test;
+
+class SomeClass { 
+  [Test] Unit someMethod() {
+  	 ..
+  }
+}
+\end{absexamplen}
+
+\noindent Interface Implementation
+\begin{absexamplen}
+module Test;
+
+class SomeClass implements Test { 
+  Unit someMethod() {
+  	 ..
+  }
+}
+\end{absexamplen}
+
+\subsection{Discussion}
+\begin{itemize}
+  \item Testing in various back-ends: Java, Maude\ldots
+  \item Handling concurrency: schedules, interactively, symbolically?
+  \item Debugging test
+\end{itemize}
+
+\subsection{Issues}
+At the moment there is no way to implements methods that corresponds to
+assertEquals or assertThat. While it would be possible if these were functions,
+one needs to find out how to log failure messages should such assertion
+functions return false.
+
+
+
+\end{document}

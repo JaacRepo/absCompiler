@@ -1,0 +1,59 @@
+module Management;
+export *;
+import * from ABS.Meta;
+
+
+data Bandwidth = Low | Mid | High;
+
+interface Connection {
+    Bandwidth checkBandwidth();
+}
+
+
+class ConnectionImpl implements Connection {
+    Bandwidth checkBandwidth() {
+        // randomly return a value
+        Int r = random(3);
+        return case r {
+	        0 => Low;
+	        1 => Mid;
+	        2 => High;
+        };
+    }
+}
+
+class Reconfigurator(Connection conn) {
+
+    Unit run() {
+        Runtime rt = new local Runtime();
+        ProductLine pl = rt.getProductLine();
+
+        while(True) {
+            Product currentP = pl.getCurrentProduct();
+            Product targetP;
+            Bandwidth bw = conn.checkBandwidth();
+
+            String name = currentP.getName();
+            if (name == "RegularChat") {
+                if (bw == Low) {
+                	targetP = pl.getProduct("LowEndChat");
+                	currentP.reconfigure(targetP);
+                } else if (bw == High) {
+                	targetP = pl.getProduct("HighEndChat");
+                	currentP.reconfigure(targetP);
+                }
+            } else if (name == "HighEndChat") {
+                if (bw == Low || bw == Mid) {
+                	targetP = pl.getProduct("RegularChat");
+                	currentP.reconfigure(targetP);
+                }
+            } else if (name == "LowEndChat") {
+                if (bw == Mid || bw == High) {
+                	targetP = pl.getProduct("RegularChat");
+                	currentP.reconfigure(targetP);
+                }
+            }
+        }
+    }
+}
+

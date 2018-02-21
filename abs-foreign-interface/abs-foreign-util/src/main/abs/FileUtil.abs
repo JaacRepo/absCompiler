@@ -1,0 +1,95 @@
+module FLI.FileUtils;
+
+export *;
+
+import * from ABS.FLI;
+
+data File = File(String) | Parent(File,String);
+
+def List<String> filePath(File f) =
+	case f {
+		File(s) => list[s];
+		Parent(g,s) => appendright(filePath(g),s);
+	};
+
+interface FileSetter {
+	Unit setFileName(String f);
+	Unit setFile(File f);
+	Unit setFileAt(File parent, String name);
+}
+
+interface FileHandler extends FileSetter {
+	Bool canRead();
+	Bool canWrite(); 
+	Bool delete(); 
+	Bool isFile();
+	Bool isDirectory(); 
+	Bool createNewFile();
+	Bool renameTo(File dest); 
+	List<File> listFiles(); 
+	String getName();
+	String getParent(); 
+	String getAbsolutePath();
+	Bool mkdir();
+}
+
+interface FileAccesser extends FileSetter {
+	Bool open();
+	Bool close();
+}
+
+interface FileReader extends FileAccesser {
+	String readLine(); 
+}
+
+interface FileWriter extends FileAccesser {
+	Bool write(String s);
+	Bool writeln(String s);
+	Bool flush();
+}
+
+[Foreign]
+class FileHandler implements FileHandler {
+	Unit setFileName(String f) { }
+	Unit setFile(File f) { }
+	Unit setFileAt(File parent, String name) { }
+
+	Bool canRead() { return False; }
+	Bool canWrite() { return False; }
+	Bool delete() { return False; }
+	Bool isFile() { return False; }
+	Bool isDirectory() { return False; }
+	Bool createNewFile() { return False; }
+	Bool renameTo(File dest) { return False; }
+	Bool mkdir() { return False;}
+	
+	List<File> listFiles() { return Nil; }
+	String getName() { return ""; }
+	String getParent() { return ""; }
+	String getAbsolutePath() { return ""; }
+	
+}
+
+[Foreign]
+class FileReader implements FileReader {
+	Unit setFileName(String f) { }
+	Unit setFile(File f) { }
+	Unit setFileAt(File parent, String name) { }
+	
+	String readLine() { return ""; }
+	Bool open() { return False; }
+	Bool close() { return False; }
+}
+
+[Foreign]
+class FileWriter implements FileWriter {
+	Unit setFileName(String f) { }
+	Unit setFile(File f) { }
+	Unit setFileAt(File parent, String name) { }
+	
+	Bool write(String s) { return False; }
+	Bool writeln(String s) { return False; }
+	Bool flush() { return False; }
+	Bool open() { return False; }
+	Bool close() { return False; }
+}

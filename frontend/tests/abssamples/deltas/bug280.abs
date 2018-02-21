@@ -1,0 +1,26 @@
+module M; export *;
+
+class X {
+	Unit m() { }
+}
+
+module N; export *;
+
+interface I { Unit n(); }
+
+
+delta K;
+
+modifies class M.X adds N.I {
+	adds Unit n() { }
+	modifies Unit m() { }
+}
+
+
+productline PL;
+features X;
+delta K when X;
+
+product P(X);
+
+

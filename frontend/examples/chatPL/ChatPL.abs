@@ -1,0 +1,8 @@
+productline ChatPL;
+
+features Text, Voice, Video, Files;
+
+delta DVoice when Voice;
+delta DVideo after DVoice when Video;
+delta DFiles when Files;
+

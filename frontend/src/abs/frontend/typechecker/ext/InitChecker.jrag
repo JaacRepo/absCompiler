@@ -1,0 +1,61 @@
+
+
+aspect InitChecker {
+
+    void ASTNode.checkLegalInit(SemanticConditionList l, ErrorMessage msg) {
+        for (ASTNode<?> n : astChildren()) {
+            n.checkLegalInit(l, msg);
+        }
+    }
+	
+    @Override
+    void SuspendStmt.checkLegalInit(SemanticConditionList l, ErrorMessage msg) {
+       l.add(new TypeError(this, msg, "Suspend statements"));
+    }
+    @Override
+    void AwaitStmt.checkLegalInit(SemanticConditionList l, ErrorMessage msg) {
+       l.add(new TypeError(this, msg, "Await statements"));
+    }
+    @Override
+    void AwaitAsyncCall.checkLegalInit(SemanticConditionList l, ErrorMessage msg) {
+        l.add(new TypeError(this, msg, "Await expressions"));
+    }
+    @Override
+    void ThrowStmt.checkLegalInit(SemanticConditionList l, ErrorMessage msg) {
+       l.add(new TypeError(this, msg, "Throw statements"));
+    }
+    @Override
+    void DieStmt.checkLegalInit(SemanticConditionList l, ErrorMessage msg) {
+       l.add(new TypeError(this, msg, "Die statements"));
+    }
+
+    @Override
+    void SyncCall.checkLegalInit(SemanticConditionList l, ErrorMessage msg) { 
+        if (!getMethodSig().isAtomic()) {
+            l.add(new TypeError(this, msg, "Synchronous calls of non-atomic methods"));
+        }
+    }
+    @Override
+    void GetExp.checkLegalInit(SemanticConditionList l, ErrorMessage msg) { 
+       l.add(new TypeError(this, msg, "Get expressions"));
+    }
+    
+    @Override
+    void FieldDecl.checkLegalInit(SemanticConditionList l, ErrorMessage msg) {
+        if (hasInitExp()) {
+            getInitExp().checkLegalInit(l, msg);
+         }
+    }
+    @Override
+    void VarDecl.checkLegalInit(SemanticConditionList l, ErrorMessage msg) {
+        if (hasInitExp()) {
+            getInitExp().checkLegalInit(l, msg);
+        }
+    }
+
+
+}
+
+// Local Variables:
+// mode: java
+// End:

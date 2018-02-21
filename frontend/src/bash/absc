@@ -1,0 +1,29 @@
+#!/bin/bash
+
+PROGNAME="$(readlink $0)"
+if [[ -z $PROGNAME ]] ; then
+    PROGNAME="$0"
+fi
+BASEDIR="$(dirname $PROGNAME)/../.."
+
+if [[ $1 == "-haskell" ]]; then
+    if command -v a2h > /dev/null; then # is in the PATH
+       args=${@#-haskell} # remove -haskell from the rest of params
+       absfiles=""
+       for i in $args; do
+          if [[ $i == *.abs ]]; then
+            absfiles="$absfiles $i"
+          fi
+       done
+       if [ -z $absfiles ];
+       then a2h $args # let a2h do the error
+       else
+       absc -prettyprint $absfiles > /dev/null && a2h -c -d gen/haskell $args # typecheck all ABS files and if succeed then continue to abs2haskell translation
+       fi
+    else
+       echo "Error: The abs2haskell compiler is not installed or not in the $PATH."
+       exit 1
+    fi
+else
+    java -Xmx512m -jar $BASEDIR/dist/absfrontend.jar "$@"
+fi

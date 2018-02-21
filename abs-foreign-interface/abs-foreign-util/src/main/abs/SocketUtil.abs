@@ -1,0 +1,124 @@
+module FLI.SocketUtils;
+
+export *;
+
+import * from ABS.FLI;
+import * from FLI.StreamUtils;
+
+[COG]
+interface Socket {
+	Unit put(Socket socket);
+	Feedback<Unit> connect(String server, Int port, Int timeout);
+	InputStream getInputStream();
+	OutputStream getOutputStream();
+	Feedback<Unit> close();
+	Bool isConnected();
+}
+
+[COG]
+interface ServerSocket {
+	Unit putServer(ServerSocket socket);
+	Feedback<Unit> setSoTimeout(Int timeout);
+ 	Feedback<Unit> bind(Int port);
+	Feedback<Socket> accept();
+	Bool isClosed();
+}
+
+[Foreign]
+class Socket implements Socket {
+	[Far] Socket socket = null;
+	
+	Unit put(Socket socket) { 
+		this.socket = socket; 
+	}
+	
+	Feedback<Unit> connect(String server, Int port, Int timeout) { 
+		Feedback<Unit> r = OK;
+		if (socket != null) {
+			Fut<Feedback<Unit>> fr = socket!connect(server,port,timeout);
+			r = fr.get;
+		}
+		return r;  
+	}
+	
+	InputStream getInputStream() { 
+		InputStream s = null;
+		if (socket != null) {
+			Fut<InputStream> fi = socket!getInputStream();
+			s = fi.get;
+		}
+		return s;
+	}
+	
+	OutputStream getOutputStream() { 
+		OutputStream s = null;
+		if (socket != null) {
+			Fut<OutputStream> fo= socket!getOutputStream();
+			s = fo.get;
+		}	
+		return s; 
+	}
+	
+	Feedback<Unit> close() { 
+		Feedback<Unit> r = OK;
+		if (socket != null) {
+			Fut<Feedback<Unit>> fu = socket!close();
+			r = fu.get;
+		}
+		return r;
+	}
+	
+	Bool isConnected() { 
+		Bool r = False;
+		if (socket != null) {
+			Fut<Bool> fb = socket!isConnected();
+			r = fb.get;
+		}
+		return r;
+	}
+}
+
+[Foreign]
+class ServerSocket implements ServerSocket {
+	[Far] ServerSocket socket = null;
+	
+	Unit putServer(ServerSocket socket) {
+		this.socket = socket;
+	}
+	
+	Feedback<Unit> setSoTimeout(Int timeout) {
+		Feedback<Unit> r = OK;
+		if (socket != null) {
+			Fut<Feedback<Unit>> fr = socket!setSoTimeout(timeout); 
+			r = fr.get;
+		}
+		return r;
+	}
+	 
+	Feedback<Unit> bind(Int port) { 
+		Feedback<Unit> r = OK;
+		if (socket != null) {
+			Fut<Feedback<Unit>> fr = socket!bind(port); 
+			r = fr.get;
+		}
+		return r;
+	}
+	
+	Feedback<Socket> accept() { 
+		Feedback<Socket> r = OK;
+		if (socket != null) {
+			Fut<Feedback<Socket>> fs = socket!accept();  
+			r = fs.get;
+		}
+		return r;
+	}
+	
+	Bool isClosed() { 
+		Bool r = False;
+		if (socket != null) {
+			Fut<Bool> fb = socket!isClosed(); 
+			r = fb.get;
+		}
+		return r;
+	}
+}

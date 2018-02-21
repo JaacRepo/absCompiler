@@ -1,0 +1,11 @@
+aspect FinalAnnotation {
+
+    syn lazy boolean TypedVarOrFieldDecl.isFinal() {
+        for (Annotation an : getAnnotations()) {
+            if (an.getType().getQualifiedName().equals("ABS.StdLib.FinalAnnotation")) {
+                return true;
+            }
+        }
+        return false;
+    }
+}

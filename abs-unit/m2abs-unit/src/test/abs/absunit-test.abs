@@ -1,0 +1,103 @@
+module AbsUnit.Tests;
+
+export AbsUnitTest, AbsUnitTestClass;
+
+import * from AbsUnit;
+import * from AbsUnit.Hamcrest;
+import * from AbsUnit.Hamcrest.Core;
+
+[Fixture]
+interface AbsUnitTest { 
+	[DataPoint] Set<Pair<Int,Int>> comparators();
+	[Test] Unit testAssertTrue();
+	[Test] Unit testAssertFalse();
+	[Test] Unit testAssertEquals(Pair<Int,Int> comp);
+	[Test] Unit testAssertNotEquals();
+	[Test] Unit testAssertThat();
+	
+	[Test] [Ignored] Unit testGiberrish1();
+	[Test] Unit testGiberrish2();
+}
+
+[Suite]
+class AbsUnitTestClass implements AbsUnitTest {
+	
+	Set<Pair<Int,Int>> comps = EmptySet;
+	ABSAssert aut;
+	
+	{
+		aut = new local ABSAssertImpl(); // AUT
+		comps = set[Pair(1,1),Pair(2,2),Pair(3,3),Pair(4,4)]; //demo
+	}
+	
+	Set<Pair<Int,Int>> comparators() {
+		return comps;
+	}
+	
+	Unit testGiberrish1() {
+		assert False;	
+	}
+	
+	[Ignored] Unit testGiberrish2() {
+		assert False;	
+	}
+	
+	Unit testGiberrish3() {
+		assert False;
+	}
+	
+	Unit testAssertTrue() {
+		aut.assertTrue(True);	
+	}
+	
+	Unit testAssertFalse() {
+		aut.assertFalse(False);
+	}
+	
+	Unit testAssertEquals(Pair<Int,Int> comp) {
+		Comparator c = new local IntComparator(fst(comp),snd(comp));
+		aut.assertEquals(c);
+	}
+	
+	Unit testAssertNotEquals() {
+		Comparator c1 = new local IntComparator(1,2);
+		Comparator c2 = new local IntComparator(2,1);
+		aut.assertNotEquals(c1);
+		aut.assertNotEquals(c2);
+	}
+	
+	Unit testAssertThat() {
+		Comparator c = new local IntComparator(1,2);
+		Matcher m1 = new local LessThan(c);
+		Matcher m2 = new local MoreThan(c);
+		Matcher m3 = new local Is(c);
+		
+		Matcher tt = new local TrueMatcher();
+		Matcher ff = new local FalseMatcher();
+		Set<Formula> fs = set[fm(ff),fm(ff),fm(tt),fm(ff),fm(ff)];
+		
+		Formula f = And(And(fm(m1),Not(Or(fm(m2),fm(m3)))),AnyOf(fs));
+		Matcher corem = new local CoreMatcher(f);
+		
+		aut.assertThat(corem);
+	}
+	
+}
+
+class TrueMatcher implements Matcher {
+	Bool matches() {
+		return True;
+	}
+}
+
+class FalseMatcher implements Matcher {
+	Bool matches() {
+		return False;
+	}
+}
+
+class IntComparator(Int expected, Int actual) implements Comparator {
+	Int compare() { 	
+		return expected - actual;	
+	}
+}

@@ -1,0 +1,95 @@
+/* This example shows an idea of how to 
+ * define and use foreign classes in ABS
+ * These are just ideas, nothing is fixed at
+ * the moment
+ */
+
+/* The FLUser module is a standard ABS module
+ * which acts as a client that uses FL code
+ */
+module FLUser;
+import * from FLDefs;
+// main block:
+{
+  // foreign classes can be created in new cogs
+  [Far] ForeignInterface i = new ForeignClass();
+
+  // and communication can happen via asynchronous calls
+  Fut<Unit> f = i!m("Hi far Java object");
+  
+  ForeignInterface i2 = new local ForeignClass();
+  i2.m("Well now you are near");
+
+  i2.foo(Bar("Hello"));
+  
+  List<String> planets = list["Mars", "Venus", "Pluto"];
+  i2.visit(planets);
+
+  Ping p = new PingImpl();
+  Fut<Unit> f2 = i!aPing(p);
+  f2.get;
+
+  Ping somePing = new SomePing();
+  Fut<String> f3 = somePing ! ping("Hi some ping");
+  f3.get;
+
+  // futures also work
+  f.get;
+}
+
+
+module FLDefs;
+export *;
+import * from ABS.FLI;
+
+data Test = Foo | Bar(String) | Baz(Int, Bool);
+
+interface ForeignInterface {
+   Unit m(String s);
+   String foo(Test t);
+   Unit visit(List<String> planets);
+   Unit aPing(Ping p);
+}
+
+
+delta MyMock {
+  adds class ForeignClass {
+  
+  }
+}
+
+interface Ping {
+    String ping(String s);
+}
+
+class PingImpl implements Ping {
+    String ping(String s) {
+        return s+" pinged";
+    }
+}
+
+[Foreign]
+class SomePing implements Ping {
+    String ping(String s) {
+        return "not bound to foreign class";
+    }
+}
+
+/*
+ * Foreign class.
+ * For foreign classes, the compilers generate proxy
+ * classes, which delegate calls to the actual objects.
+ * this way guarantees 
+ */
+[Foreign] 
+class ForeignClass implements ForeignInterface {
+    // in the final realization no implementation 
+    // for the methods must be given as this cass is foreign
+    // this is just for the current compiler
+    Unit m(String s) { }
+    String foo(Test t) { return ""; }
+    Unit visit(List<String> planets) { }
+    Unit aPing(Ping p) { }
+}
+
+

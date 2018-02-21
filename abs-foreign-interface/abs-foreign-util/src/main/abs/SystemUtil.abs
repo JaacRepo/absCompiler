@@ -1,0 +1,33 @@
+module FLI.SystemUtils;
+
+export *;
+
+import * from ABS.FLI;
+
+interface System {
+	Unit outPrint(String s);
+	Unit outPrintln(String s);
+	Unit exit(Int s);
+	String read();
+}
+
+[Foreign] 
+class System implements System {
+	List<String> histories = Nil;
+	
+	Unit outPrint(String s) { 
+		histories = appendright(histories,s); 
+	}
+	
+	Unit outPrintln(String s) { 
+		histories = appendright(histories,s); 
+	}
+	
+	Unit exit(Int s) {
+		
+	}
+	
+	String read() {
+		return "";
+	}
+}

@@ -1,0 +1,80 @@
+module M;
+import * from ABS.Scheduler;
+import * from ABS.Meta;
+
+interface C { Unit m(); }
+
+class CImpl implements C {
+    Unit m() {}
+}
+
+/////////////////////////////////////////////////////////////////////////
+
+/*
+def Process minPid(List<Process> list) = minPid_h(head(list), tail(list));
+
+def Process minPid_h(Process p, List<Process> l) = 
+    case l {
+        Nil => p; 
+        Cons(p2,l2) => if procId(p) < procId(p2) then minPid_h(p, l2) else minPid_h(p2, l2);
+    };
+
+def Pid procId(Process p) =
+    case p {
+        Process(pid,_,_,_,_,_,_,_,_) => pid;
+    };
+*/
+  
+/////////////////////////////////////////////////////////////////////////
+
+// FIFO : first in first out
+def Process fifo (List<Process> l) = fifo_h(head(l), tail(l));
+
+def Process fifo_h(Process p1, List<Process> l1) =
+    case l1 {
+        Nil => p1;
+        Cons(p2,l2) => 
+            case fifo_comp(p1, p2) {
+                True  => fifo_h(p1,l2);
+                False => fifo_h(p2,l2);
+            };
+    };
+
+// fifo comparison
+def Bool fifo_comp(Process p1, Process p2) = timeValue(arrival(p1)) <= timeValue(arrival(p2));
+
+
+/* user-defined scheduler class
+ * schedule() defers the scheduling decision to the fifo function
+ */
+class MyScheduler1 implements ProcessScheduler {
+    Process schedule(List<Process> l) {
+        return fifo(l);
+    }
+}
+
+class MyScheduler2 implements ProcessScheduler {
+    Process schedule (List<Process> l) {
+        return fifo(l);
+    }
+}
+
+
+{
+//    [Scheduler: defaultscheduler(queue)] C obj = new CImpl();
+
+    C o = new CImpl();
+
+    ObjectMirror om = reflect(o);
+    Cog g = om.getCog();
+
+    // sched is in a different cog!
+    ProcessScheduler sched = new local MyScheduler1();
+    g.setScheduler(sched);
+
+    o!m();
+    o!m();
+    o!m();
+    
+
+}

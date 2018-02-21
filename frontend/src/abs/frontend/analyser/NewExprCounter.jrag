@@ -1,0 +1,28 @@
+aspect NewExpCounter {
+    
+    Model implements HasCogs;
+    CompilationUnit implements HasCogs;
+    ModuleDecl implements HasCogs;
+    Decl implements HasCogs;
+    Block implements HasCogs;
+
+    protected int ASTNode.getNumberOfNewCogExpr() {
+        int count = 0;
+        for (int i = 0; i < getNumChild(); i++) {
+            count += getChild(i).getNumberOfNewCogExpr();
+        }
+        return count;
+    }
+
+    @Override
+    protected int NewExp.getNumberOfNewCogExpr() {
+        return hasLocal() ? 0 : 1;
+    }
+
+    // increase visibility where it's needed and cache:
+    syn lazy int Model.getNumberOfNewCogExpr() = super.getNumberOfNewCogExpr();
+    syn lazy int CompilationUnit.getNumberOfNewCogExpr() = super.getNumberOfNewCogExpr();
+    syn lazy int ModuleDecl.getNumberOfNewCogExpr() = super.getNumberOfNewCogExpr();
+    syn lazy int Decl.getNumberOfNewCogExpr() = super.getNumberOfNewCogExpr();
+    syn lazy int Block.getNumberOfNewCogExpr() = super.getNumberOfNewCogExpr();
+}

@@ -1,0 +1,15 @@
+module M;
+
+delta Y;
+
+delta X; uses M;
+  adds interface I { }
+  adds interface J extends I { }
+
+productline PL;
+  features F, G;
+  delta X when F;
+  delta Y when G;
+
+product P (F);
+product Q (G);

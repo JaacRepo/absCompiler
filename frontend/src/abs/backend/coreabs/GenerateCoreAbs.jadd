@@ -1,0 +1,208 @@
+import java.io.PrintStream;
+
+aspect GenerateCoreABS {
+
+    public void ASTNode.generateCoreABS(PrintStream stream) {
+        // placeholder
+        
+        stream.println("// " + getClass().getSimpleName()
+//                + " Declared in " + getModuleDecl().getFileName()
+                + " line " + getStartLine()
+                + " column " + getStartColumn()
+                );
+    }
+    
+    public void Model.generateCoreABS(PrintStream stream) {
+        super.generateCoreABS(stream);
+
+        for (ModuleDecl decl : getModuleDecls()) {
+            decl.generateCoreABS(stream);
+        }
+    }
+ 
+    public void ModuleDecl.generateCoreABS(PrintStream stream) {
+        stream.println("// " + getClass().getSimpleName() + " Declared in " + getFileName() + " line " + getStartLine());
+
+        stream.println("Module " + getName() + ";");
+        
+        for (Decl decl : getDecls()) {
+            decl.generateCoreABS(stream);
+        }
+    }
+    
+    public void Decl.generateCoreABS(PrintStream stream) {
+        stream.println("// " + getClass().getSimpleName() + " Declared in " + getFileName() + " line " + getStartLine());
+    }
+
+    /** Global switch whether this rewriting is enabled.  If you ever have to
+     *  turn this off, make sure all the missing operations in the
+     *  AwaitAsyncCall-class have been filled in.
+     */
+    public static boolean Model.doAACrewrite = true;
+
+    // Since rewriting happens during type-checking, make sure we don't
+    // attempt a rewrite without type-checking information
+    public boolean AwaitAsyncCall.canBeRewritten() {
+        if (!amInCoreAbs()) return false;
+        Type calleetype = getCallee().getType();
+        if (calleetype.isUnknownType()) return false;
+        MethodSig m = calleetype.lookupMethod(getMethod());
+        if (m == null) return false;
+        Access a = (Access)m.getReturnType();
+        if (a.getType().isUnknownType()) return false;
+        return true;
+    }
+
+    coll Set<AwaitAsyncCall> Stmt.getRewritableAACs() [new HashSet()] with add root Stmt;
+    AwaitAsyncCall contributes this when canBeRewritten()
+        to Stmt.getRewritableAACs() for closestParent(Stmt.class);
+
+    public boolean Stmt.hasRewritableAwaitAsyncCall() {
+        return getRewritableAACs().size() > 0;
+    }
+
+    public boolean Block.blockHasRewritableAwaitAsyncCalls() {
+        for (Stmt s : getStmtListNoTransform()) {
+            if (s.hasRewritableAwaitAsyncCall()) return true;
+        }
+        return false;
+    }
+
+
+    rewrite Block {
+        when (Model.doAACrewrite // don't attempt if told not to
+              && blockHasRewritableAwaitAsyncCalls() // do we have an AwaitAsyncExpr?
+              && amInCoreAbs()  // don't attempt in deltas, traits (type information unavailable)
+              && closestParent(Model.class) != null // don't attempt in detached subtree
+              )
+        to Block {
+            List<Stmt> newStatements = new List<Stmt>();
+            for (Stmt s : getStmtListNoTransform()) {
+                if (!s.hasRewritableAwaitAsyncCall()) {
+                    newStatements.add(s.treeCopyNoTransform());
+                } else {
+                    // insert two statements: VarDecl for temporary variable
+                    // receiving future, then Await that variable.  Finally,
+                    // replace AwaitAsyncCall with GetExp in our original
+                    // statement.
+
+                    // getRewritableAACs() will be a singleton; we never have >1 EffExp per statement
+                    AwaitAsyncCall aac = s.getRewritableAACs().iterator().next();
+                    Type calleetype = aac.getCallee().getType();
+                    Access a = (Access)calleetype.lookupMethod(aac.getMethod()).getReturnType();
+                    final String varName = "tmp"+Integer.toString(aac.hashCode());
+                    // The annotations on an "await o!m();"-containing
+                    // statement need to end up on the fresh "o!m()"; move
+                    // them there
+                    List<Annotation> annotations = s.getAnnotationList().treeCopyNoTransform();
+                    final TypeUse du = a.getType().toUse();
+                    // TODO: The typechecker will assert that/if the name is
+                    // free, but in freak chances it may not.
+                    AsyncCall nac = new AsyncCall(aac.getCallee(), aac.getMethod(), aac.getParamList());
+                    nac.setPositionFromNode(aac);
+                    ParametricDataTypeUse pdtu = new ParametricDataTypeUse("Fut", new List(), new List().add(du));
+                    pdtu.setPositionFromNode(aac);
+                    // Annotations of the original "await o!m()" moved here
+                    VarDeclStmt vds = new VarDeclStmt(annotations, new VarDecl(varName, pdtu, new Opt(nac)));
+                    vds.setPositionFromNode(aac);
+                    AwaitStmt as = new AwaitStmt(new List(), new ClaimGuard( new VarUse(varName)));
+                    as.setPositionFromNode(aac);
+                    GetExp g = new GetExp(new VarUse(varName));
+                    g.setPositionFromNode(aac);
+
+                    newStatements.add(vds);
+                    newStatements.add(as);
+
+                    if (s instanceof VarDeclStmt) {
+                        ((VarDeclStmt)s).getVarDecl().setInitExp(g);
+                    } else if (s instanceof AssignStmt) {
+                        ((AssignStmt)s).setValue(g);
+                    } else if (s instanceof ReturnStmt) {
+                        ((ReturnStmt)s).setRetExp(g);
+                    } else if (s instanceof ExpressionStmt) {
+                        ((ExpressionStmt)s).setExp(g);
+                    } else {
+                        throw new NotImplementedYetException(this, "Don't know how to rewrite statement " + s.getClass().toString());
+                    }
+                    newStatements.add(s.treeCopyNoTransform());
+                }
+            }
+            setStmtList(newStatements);
+            return this;
+        }
+
+    }
+
+
+    /** Global switch whether this rewriting is enabled.  If you ever have to
+     *  turn this off, make sure all the missing operations in the
+     *  AwaitAsyncCall-class have been filled in.
+     */
+    public static boolean Model.doForEachRewrite = true;
+
+    // Since rewriting happens during type-checking, make sure we don't
+    // attempt a rewrite without type-checking information
+    public boolean ForeachStmt.canBeRewritten() {
+        if (!amInCoreAbs()) return false;
+        Type vartype = getLoopVarDecl().getType();
+        if (vartype.isUnknownType()) return false;
+        return true;
+    }
+
+    rewrite ForeachStmt {
+        when (Model.doForEachRewrite // don't attempt if told not to
+              && canBeRewritten()
+              && closestParent(Model.class) != null // don't attempt in detached subtree
+              )
+        to Block {
+            // [A] foreach (i in l) { ... }
+            // =>
+            // [A] {                       (1)
+            //   List tmp = l;             (2)
+            //   while (!isEmpty(tmp) {    (3)
+            //     i = head(tmp);          (4)
+            //     tmp = tail(tmp);        (5)
+            //     {...}                   (6)
+            // }
+
+            final Type listtype = getListExp().getType();
+            final Type vartype = getLoopVarDecl().getType();
+            final String listvarname = "tmp"+Integer.toString(hashCode());
+            final String varname = getLoopVarDecl().getName();
+
+            // (1)
+            Block result = new Block();
+            // `setPositionFromNode' sets up default line/column positions for
+            // contained nodes as well
+            result.setPositionFromNode(this);
+            result.setAnnotationList(getAnnotations().treeCopyNoTransform());
+
+            // (2)
+            VarDeclStmt listvarstmt = new VarDeclStmt(new List(), new VarDecl(listvarname, listtype.toUse(), new Opt(getListExp().treeCopyNoTransform())));
+            result.addStmt(listvarstmt);
+
+            // (3)
+            PureExp whilecondition = new NegExp(new FnApp("isEmpty", new List(new VarUse(listvarname))));
+            Block whilebody = new Block();
+            WhileStmt whilestmt = new WhileStmt();
+            whilestmt.setCondition(whilecondition);
+            whilestmt.setBody(whilebody);
+            result.addStmt(whilestmt);
+
+            // (4)
+            VarDeclStmt loopvarstmt = new VarDeclStmt(new List(), new VarDecl(varname, vartype.toUse(), new Opt(new FnApp("head", new List(new VarUse(listvarname))))));
+            whilebody.addStmt(loopvarstmt);
+
+            // (5)
+            AssignStmt loopvardecrement = new AssignStmt(new List(), new VarUse(listvarname), new FnApp("tail", new List(new VarUse(listvarname))));
+            whilebody.addStmt(loopvardecrement);
+
+            // (6)
+            whilebody.addStmt(getBody().treeCopyNoTransform());
+
+            return result;
+        }
+
+    }
+
+}

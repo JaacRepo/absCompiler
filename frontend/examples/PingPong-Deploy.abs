@@ -1,0 +1,81 @@
+/*
+ * PingPong.abs -- PingPong example
+ *
+ */
+module PingPong;
+import * from ABS.DC;
+
+// Tests for Deployment
+data DeployParamSpecification = Req | List(Int) | Default(String) | User ;
+data DeployScenarioElement = MaxUse(Int) | Cost(String, Int) | Param(String, DeployParamSpecification) | Name(String);
+type Deploy = List<DeployScenarioElement>;
+// Tests End
+
+
+data PingMsg = Fine
+             | HelloPing 
+             | ByePing 
+             ;
+
+data PongMsg = NoMsg 
+         | Hello(Ping)
+         | HowAreYou
+         | ByePong
+         ;
+
+
+
+interface Ping {
+    Unit ping(PingMsg m);
+}
+
+interface Pong {
+    Unit hello(Ping ping);
+    Unit pong(PongMsg m);
+}
+
+[Deploy: scenario[MaxUse(1), Cost("CPU", 1), Cost("Memory", 1), Param("lpong", List(1)), Name("toto")] ]
+[Deploy: scenario[MaxUse(4), Cost("CPU", 4), Cost("Memory", 4), Param("lpong", List(4))] ]
+class PingImpl(List<Pong> lpong) implements Ping {
+    Pong pong = nth(lpong, 0);
+    Unit run(){
+      pong!hello(this); 
+    }
+
+    Unit ping(PingMsg msg){
+      PongMsg reply = case msg {
+         HelloPing => HowAreYou;
+         Fine => ByePong; 
+         ByePing => NoMsg;
+      };
+      
+      if (reply != NoMsg) {
+         Fut<Unit> fu = pong!pong(reply);
+      	 fu.get;
+      }
+     }
+}
+[DeployScenarioElement: MaxUse(3) ]
+[Deploy: scenario[MaxUse(1), Cost("CPU", 1), Cost("Memory", 1)] ]
+class PongImpl implements Pong {
+    Ping ping;
+
+    Unit hello(Ping ping) {
+       this.ping = ping;
+       ping!ping(HelloPing);
+    }
+
+    Unit pong(PongMsg msg){
+       if (msg == HowAreYou)
+           ping!ping(Fine);
+       else
+           ping!ping(ByePing);
+    } 
+
+}
+
+{
+    DeploymentComponent dc;
+    [DC: dc] Pong pong = new PongImpl(); 
+    new PingImpl(Cons(pong,Nil)); 
+}

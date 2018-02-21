@@ -1,0 +1,340 @@
+aspect VarResolution {
+
+	/**
+	 * Unlike getType() which has UnknownType, getDecl() may still return null.
+	 * TODO: return UnknownDecl instead?
+	 */
+    syn lazy VarOrFieldDecl VarOrFieldUse.getDecl();
+    eq VarUse.getDecl() = lookupVarOrFieldName(getName(),false);
+    eq FieldUse.getDecl() = lookupVarOrFieldName(getName(),true);
+    syn lazy VarOrFieldDecl PatternVarUse.getDecl();
+    eq PatternVarUse.getDecl() = lookupVarOrFieldName(getName(), false);
+
+    /**
+     * Replace VarUse nodes with field accesses, since in the grammar this.x and x are different.
+     * Since we can do the 2nd part by AST-inspection, we might as well do it in the parser.  
+     */
+    rewrite VarUse {
+       when (getDecl() instanceof FieldDecl || (getDecl() instanceof ParamDecl && getDecl().getParent().getParent() instanceof ClassDecl))
+       to FieldUse {
+        FieldUse fu=new FieldUse(getName());
+        /* Patch position to cover original range.
+         * The InitChecker was using those, I am
+         * not sure if they are used for absolute
+         * addressing the source anywhere. */
+        fu.setPositionFromNode(this);
+        return fu;
+       }
+    }
+
+    syn int Block.getNumVar() = getVars().size();
+    
+    /**
+     * Get declared variables.
+     * FIXME: descends into nested blocks, but not into IF/WHILE?!?
+     **/
+    syn lazy Collection<VarDecl> Block.getVars() {
+        ArrayList<VarDecl> res = new ArrayList<VarDecl>();
+        for (Stmt stmt : getStmts()) {
+            if (stmt instanceof VarDeclStmt) {
+                res.add(((VarDeclStmt) stmt).getVarDecl());
+            } else if (stmt instanceof Block) {
+                res.addAll(((Block)stmt).getVars());
+            }
+        }
+        return res;
+    }
+
+    /**
+     * Get directly declared variables.  Does not descent into sub-blocks.
+     **/
+    syn lazy Collection<VarDecl> Block.getDirectVars() {
+        ArrayList<VarDecl> res = new ArrayList<VarDecl>();
+        for (Stmt stmt : getStmts()) {
+            if (stmt instanceof VarDeclStmt) {
+                res.add(((VarDeclStmt) stmt).getVarDecl());
+            }
+        }
+        return res;
+    }
+
+    
+    syn lazy PatternVarDecl Pattern.locallookupVarOrFieldName(String name, boolean fieldOnly);
+    eq Pattern.locallookupVarOrFieldName(String name, boolean fieldOnly) = null;
+    eq PatternVarUse.locallookupVarOrFieldName(String name, boolean fieldOnly) = null;
+    eq PatternVar.locallookupVarOrFieldName(String name, boolean fieldOnly) {
+        if (!fieldOnly && getVar().getName().equals(name))
+            return getVar();
+        return null;
+    }
+    eq ConstructorPattern.locallookupVarOrFieldName(String name, boolean fieldOnly) {
+        if (!fieldOnly) {
+            for (Pattern p : getParams()) {
+                PatternVarDecl d = p.locallookupVarOrFieldName(name,fieldOnly);
+                if (d != null)
+                    return d;
+            }
+        }
+        return null;
+    }
+
+    syn lazy VarOrFieldDecl ForeachStmt.locallookupVarOrFieldName(String name, boolean fieldOnly);
+    eq ForeachStmt.locallookupVarOrFieldName(String name, boolean fieldOnly) {
+        if (!fieldOnly && getLoopVarDecl().getName().equals(name)) {
+            return getLoopVarDecl();
+        } else {
+            return null;
+        }
+    }
+
+    syn lazy VarOrFieldDecl Decl.locallookupVarOrFieldName(String name, boolean fieldOnly);
+    eq Decl.locallookupVarOrFieldName(String name, boolean fieldOnly) = null;
+    eq FunctionDecl.locallookupVarOrFieldName(String name, boolean fieldOnly) {
+        for (VarOrFieldDecl decl : getParams()) {
+            if (decl.getName().equals(name))
+                return decl;
+        }
+        return null;
+    }
+
+    /**
+     * FIXME: ignores fieldOnly - refactor to avoid confusion?
+     */
+    eq ClassDecl.locallookupVarOrFieldName(String name, boolean fieldOnly) {
+   	  for (ParamDecl p : getParams()) {
+   		  if (p.getName().equals(name)) 
+   			  return p;
+   	  }
+   	 
+        for (FieldDecl d : getFields()) {
+            if (d.getName().equals(name))
+                return d;
+        }
+        return null;
+    }
+
+    eq Block.getStmt(int i).lookupVarOrFieldName(String name, boolean fieldOnly) {
+      if (!fieldOnly) {
+        while (i>0) {
+            Stmt s = getStmt(i-1); // we can only see variables defined in previous statements
+            if (s instanceof VarDeclStmt) {
+                 VarDeclStmt vds = (VarDeclStmt) s;
+                 VarOrFieldDecl d = vds.locallookupVarOrFieldName(name,fieldOnly);
+                 if (d != null)
+                     return d;
+            }
+            i--;
+		}
+	  }
+      return lookupVarOrFieldName(name,fieldOnly);
+    }
+
+    eq ForeachStmt.getBody().lookupVarOrFieldName(String name, boolean fieldOnly) {
+        return locallookupVarOrFieldName(name, fieldOnly);
+    }
+
+    syn lazy VarOrFieldDecl VarDeclStmt.locallookupVarOrFieldName(String name, boolean fieldOnly) {
+        if (!fieldOnly) {
+            VarOrFieldDecl d = getVarDecl();
+            if (d.getName().equals(name))
+                return d;
+        }
+        return null;
+    }
+    
+    syn lazy VarOrFieldDecl MethodSig.locallookupVarOrFieldName(String name, boolean fieldOnly) {
+        if (!fieldOnly) {
+            for (ParamDecl d : getParams()) {
+                if (d.getName().equals(name))
+                    return d;
+            }
+        }
+        return null;
+    }
+    
+    syn lazy VarOrFieldDecl AddFieldModifier.locallookupVarOrFieldName(String name, boolean fieldOnly) {
+        FieldDecl d = getFieldDecl();
+        if (d.getName().equals(name))
+            return d;
+        else
+            return null;
+    }
+    
+    
+    /* Resolution of variables used inside deltas
+     * TODO use SPL configuration for guidance as of which deltas must have been applied before this delta.
+     * But for now this will do:
+     * Search for FieldDecl in current ModifyClassModifier, then all deltas, then core
+     */
+    syn lazy VarOrFieldDecl Modifier.locallookupVarOrFieldName(String name, boolean fieldOnly) {
+        VarOrFieldDecl var = null;
+        
+        // search in current ModifyClassModifier for AddField modifiers
+        for (Modifier mod : getModifyClassModifier().getModifiers()) {
+            if (mod instanceof AddFieldModifier) {
+                var = ((AddFieldModifier)mod).locallookupVarOrFieldName(name, fieldOnly);
+                if (var != null) {
+                    return var;
+                }
+            }
+        }
+        
+        // Search in all other deltas for addField modifiers that apply to same module&class
+        String targetModule = targetModuleName();
+        String targetClass = targetClassName();
+        
+        for (DeltaDecl delta : getModel().getDeltaDecls()) {
+            for (ModuleModifier mmod : delta.getModuleModifiers()) {
+                if (mmod.getModule() != null && mmod.targetModuleName().equals(targetModule)) {
+                    
+                    if (mmod instanceof AddClassModifier) {
+                        if (mmod.getSimpleName().equals(targetClass)) {
+                            ClassDecl cd = ((AddClassModifier)mmod).getClassDecl();
+                            var = cd.locallookupVarOrFieldName(name, fieldOnly);
+                            if (var != null) {
+                                return var;
+                            }
+                        }
+                    } else if (mmod instanceof ModifyClassModifier) {
+                        if (((ModifyClassModifier)mmod).targetClassName().equals(targetClass)) {
+                            for (Modifier mod : ((ModifyClassModifier)mmod).getModifiers()) {
+                                if (mod instanceof AddFieldModifier) {
+                                    var = ((AddFieldModifier)mod).locallookupVarOrFieldName(name, fieldOnly);
+                                    if (var != null) {
+                                        return var;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // search core
+        ClassDecl cd = getModifyClassModifier().getClassDecl();
+        var = cd == null ? null : cd.locallookupVarOrFieldName(name, fieldOnly);
+        
+        return var;
+    }
+
+    syn lazy VarOrFieldDecl TraitExpr.mylookupVarOrFieldName(String name, boolean fieldOnly) {
+	      ASTNode<ASTNode> obj = this;
+	      while(obj != null && !(obj instanceof Modifier))
+	          obj = obj.parent;
+	      if(obj != null){
+	          Modifier mod = (Modifier)obj;
+	          return mod.locallookupVarOrFieldName(name, fieldOnly);
+	      }else{
+	          throw new DeltaModellingException("Cannot find modifier above TraitExpr in AST!");
+	      }
+	  }
+    inh VarOrFieldDecl MethodImpl.lookupVarOrFieldName(String name, boolean fieldOnly);
+    
+    eq ClassDecl.getMethod(int i).lookupVarOrFieldName(String name, boolean fieldOnly) 
+        = locallookupVarOrFieldName(name,fieldOnly);
+    
+    eq TraitSetExpr.getMethodImpl().lookupVarOrFieldName(String name, boolean fieldOnly) //= null;
+        = mylookupVarOrFieldName(name,fieldOnly);
+
+    
+    syn lazy VarOrFieldDecl MethodImpl.locallookupVarOrFieldName(String name, boolean fieldOnly) {
+        if (!fieldOnly) {
+            VarOrFieldDecl d = getMethodSig().locallookupVarOrFieldName(name,fieldOnly);
+            if (d != null) 
+                return d;
+        }
+        return lookupVarOrFieldName(name,fieldOnly);
+    }
+
+    eq InterfaceDecl.getBody(int i).lookupVarOrFieldName(String name, boolean fieldOnly) 
+        = getBody(i).locallookupVarOrFieldName(name,fieldOnly);
+    
+    eq MethodImpl.getMethodSig().lookupVarOrFieldName(String name, boolean fieldOnly) { 
+        if (!fieldOnly) {
+            VarOrFieldDecl d = getMethodSig().locallookupVarOrFieldName(name,fieldOnly);
+            if (d != null) 
+                return d;
+        }
+
+        return lookupVarOrFieldName(name,fieldOnly);
+    }
+    
+    eq MethodImpl.getBlock().lookupVarOrFieldName(String name, boolean fieldOnly) {
+        return locallookupVarOrFieldName(name,fieldOnly);
+    }
+    
+    eq ModuleDecl.getBlock().lookupVarOrFieldName(String name, boolean fieldOnly) = null;
+    eq ModuleDecl.getDecl(int i).lookupVarOrFieldName(String name, boolean fieldOnly) 
+        = getDecl(i).locallookupVarOrFieldName(name,fieldOnly);
+    
+    // eq DeltaDecl.getModuleModifier(int i).lookupVarOrFieldName(String name, boolean fieldOnly) { assert false; return null; } // XXX
+    
+    inh VarOrFieldDecl CaseBranch.lookupVarOrFieldName(String name, boolean fieldOnly);
+    eq CaseBranch.getRight().lookupVarOrFieldName(String name, boolean fieldOnly) {
+        if (!fieldOnly) {
+            VarOrFieldDecl d = getLeft().locallookupVarOrFieldName(name,fieldOnly);
+            if (d != null)
+                return d;
+        }
+        return lookupVarOrFieldName(name, fieldOnly);
+    }
+
+    inh VarOrFieldDecl CaseBranchStmt.lookupVarOrFieldName(String name, boolean fieldOnly);
+    eq CaseBranchStmt.getRight().lookupVarOrFieldName(String name, boolean fieldOnly) {
+        if (!fieldOnly) {
+            VarOrFieldDecl d = getLeft().locallookupVarOrFieldName(name,fieldOnly);
+            if (d != null)
+                return d;
+        }
+        return lookupVarOrFieldName(name, fieldOnly);
+    }
+
+    eq LetExp.getExp().lookupVarOrFieldName(String name, boolean fieldOnly) {
+        if (!fieldOnly && getVar().getName().equals(name))
+            return getVar();
+        return lookupVarOrFieldName(name, fieldOnly);
+    }
+
+    eq HasMethod.getMethodSig().lookupVarOrFieldName(String name, boolean fieldOnly) = null;
+    
+    // TODO: return something more meaningful here?
+    eq UpdateDecl.getObjectUpdate().lookupVarOrFieldName(String name, boolean fieldOnly) = null;
+    
+    inh VarOrFieldDecl Exp.lookupVarOrFieldName(String name, boolean fieldOnly);
+    /* [stolz/georgo]
+       This is weird: here seems to be the reason for the failing patternVarTest, where the parent of the
+       declaration is a delta Modifier and the lookup mechanism failed. We have actually expected either a
+       warning for the missing eq (which we didn't get) or JastAdd error, because the eq doesn't match an inh.
+       So it somehow matches the one above here, but doesn't trigger a warning... */
+    eq ExpFunctionDef.getRhs().lookupVarOrFieldName(String name, boolean fieldOnly) { FunctionDecl fd = (FunctionDecl) getParent(); return fd.locallookupVarOrFieldName(name, fieldOnly); }
+    inh VarOrFieldDecl Stmt.lookupVarOrFieldName(String name, boolean fieldOnly);
+    eq ClassDecl.getInitBlock().lookupVarOrFieldName(String name, boolean fieldOnly) = locallookupVarOrFieldName(name,fieldOnly);
+    inh VarOrFieldDecl PatternVarUse.lookupVarOrFieldName(String name, boolean fieldOnly);
+    
+	inh VarOrFieldDecl FieldDecl.lookupVarOrFieldName(String name, boolean fieldOnly);
+    eq FieldDecl.getInitExp().lookupVarOrFieldName(String name, boolean fieldOnly) {
+        return lookupVarOrFieldName(name,fieldOnly);
+    }
+    eq ClassDecl.getField(int i).lookupVarOrFieldName(String name, boolean fieldOnly) = locallookupVarOrFieldName(name,fieldOnly);
+    eq HasField.getFieldDecl().lookupVarOrFieldName(String name, boolean fieldOnly) { assert false : "NYI - what is this?"; return null; }
+    /* Can only be typed after resolving deltas: */
+    eq AddFieldModifier.getFieldDecl().lookupVarOrFieldName(String name, boolean fieldOnly) = null;
+    eq RemoveFieldModifier.getFieldDecl().lookupVarOrFieldName(String name, boolean fieldOnly) = null;
+
+    // replace unbound pattern variables with var decls
+    rewrite PatternVarUse {
+        when (lookupVarOrFieldName(getName(),false) == null)
+        to PatternVar {
+            PatternVarDecl decl = new PatternVarDecl(getName());
+            decl.setPositionFromNode(this);
+            PatternVar v = new PatternVar(decl);
+            v.setPositionFromNode(this);
+            return v;
+        }
+    }
+}
+
+// Local Variables:
+// mode: java
+// End:

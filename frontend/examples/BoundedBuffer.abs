@@ -1,0 +1,83 @@
+/*
+ *
+ * A working version of a program with two producers and 
+ * two consumers comunicating via a shared bounded-buffer
+ *
+ */
+module BoundedBuffer;
+
+type Data = Int;
+
+interface Buffer {
+    Unit append(Data d);
+    Data remove();
+}
+
+interface Consumer {
+   Unit consume(Data amount);
+} 
+
+interface Producer {
+   Unit produce(Data amount);
+}
+
+
+class BoundedBuffer(Int maxElements) implements Buffer {
+    
+    //A bounded buffer
+    List<Data> buffer = Nil; 
+    Int numElements = 0;
+
+    Unit append(Data d){
+        await (numElements < maxElements) ; 
+        buffer = appendright(buffer,d);
+        numElements = numElements + 1 ; 
+    }
+    
+    Data remove() {
+        Data d = 0;
+        await numElements > 0 ; 
+        d = head(buffer);
+        buffer = tail(buffer);
+        numElements = numElements - 1 ; 
+        return d ; 
+    }
+}
+
+class ProducerImpl (Buffer b) implements Producer {
+    
+    Unit produce(Data amount) {
+        if (amount > 0) {
+            b!append(amount);
+            this!produce(amount - 1);
+        }
+    }
+}
+
+class ConsumerImpl (Buffer b) implements Consumer {
+    
+    Unit consume(Data amount) {
+        if (amount > 0) {
+            b!remove();
+            this!consume(amount - 1);
+        }
+    }
+}
+
+//Main
+{
+    Buffer buff;
+    Producer p1;
+    Producer p2;
+    Consumer c1;
+    Consumer c2;
+    buff = new BoundedBuffer(5); 
+    p1 = new ProducerImpl(buff);    
+    c1 = new ConsumerImpl(buff);
+    p2 = new ProducerImpl(buff);    
+    c2 = new ConsumerImpl(buff);
+    p1!produce(10);
+    c1!consume(10);
+    p2!produce(10);
+    c2!consume(10);
+}

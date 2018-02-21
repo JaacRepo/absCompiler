@@ -1,0 +1,16 @@
+aspect FLIAnnotation {
+
+    syn lazy boolean ClassDecl.isForeign() {
+        return !AnnotationHelper.getAnnotationsOfType(getAnnotations(),"ABS.FLI.FLIAnnotation").isEmpty();
+    }
+    
+    syn lazy boolean MethodImpl.isForeign() {
+        if (!AnnotationHelper.getAnnotationsOfType(getMethodSig().getAnnotations(),"ABS.FLI.FLIAnnotation").isEmpty())
+            return true;
+        Decl d = getContextDecl();
+        if (d.isUnknown())
+            return false; // A MethodImpl's context can also be a Modifier in which case it is not a Decl
+        else
+            return ((ClassDecl) d).isForeign();
+    }
+}
