@@ -126,6 +126,7 @@ public class ScalaVisitor {
     private static final String NEW_LINE = StandardSystemProperty.LINE_SEPARATOR.value();
     private static final String ABS_API_ACTOR_CLASS = "LocalActor";
     private static final String ABS_API_INTERFACE_CLASS = "Actor";
+    private static final String ABS_API = "abs.api.cwi";
 
     private static final String ABS_STDLIB = "ABS.StdLib";
 
@@ -138,8 +139,8 @@ public class ScalaVisitor {
     // private static final String ABS_API_ACTOR_SERVER_CLASS =
     // ActorServer.class.getName();
     private static final Set<Modifier> DEFAULT_MODIFIERS = new HashSet<>();
-    private static final String[] DEFAULT_IMPORTS = new String[]{ABSFUTURE_CLASS + ALL_IMPORTS,
-            ABSFUTURE_CLASS + "." + FUNCTIONS_CLASS_NAME + ALL_IMPORTS,
+    private static final String[] DEFAULT_IMPORTS = new String[]{ABS_API + ALL_IMPORTS,
+            ABS_API + "." + FUNCTIONS_CLASS_NAME + ALL_IMPORTS,
             Function.class.getPackage().getName() + ALL_IMPORTS, Callable.class.getPackage().getName() + ALL_IMPORTS,
             AtomicLong.class.getPackage().getName() + ALL_IMPORTS, Lock.class.getPackage().getName() + ALL_IMPORTS,
             "abs.api.realtime" + ALL_IMPORTS,
