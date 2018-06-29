@@ -14,12 +14,13 @@
 -export([init/1]).
 
 -define(CMDLINE_SPEC,
-        [{port,$p,"port",{integer,none},"Start http on port and keep model running"},
+        [{port,$p,"port",{integer,none},"Listen for model API requests on port (0 for random port) and keep model running"},
          {influxdb_enable,$i,"influxdb-enable",undefined,"Enable writing to InfluxDB"},
          {influxdb_url,$u,"influxdb-url",{string,"http://localhost:8086"},"Write log data to influxdb database located at URL"},
          {influxdb_db,$d,"influxdb-db",{string,"absmodel"},"Name of the influx database log data is written to"},
-         {clocklimit,$l,"clock-limit",{integer,none},"Terminate simulation after given clock value"},
-         {schedulers,$s,"schedulers",{integer,none},"Set number of online schedulers"},
+         {clocklimit,$l,"clock-limit",{integer,none},"Do not advance simulation clock above given clock value"},
+         {schedulers,$s,"schedulers",{integer,none},"Set number of online erlang schedulers"},
+         {version,$v,"version",undefined,"Output version and exit"},
          {main_module,undefined,undefined,{string, ?ABSMAINMODULE},"Name of Module containing MainBlock"}]).
 
 
@@ -60,6 +61,11 @@ start_http(Port, Clocklimit) ->
 parse(Args,Exec)->
     case getopt:parse_and_check(?CMDLINE_SPEC,Args) of
         {ok,{Parsed,[]}} ->
+            case proplists:get_value(version, Parsed, none) of
+                none -> ok;
+                _ -> io:format("~s~n", [?ABSCOMPILERVERSION]),
+                     halt(0)
+            end,
             Module = case proplists:get_value(main_module,Parsed,none) of
                          none -> ?ABSMAINMODULE;
                          [] -> ?ABSMAINMODULE;
@@ -117,12 +123,12 @@ start_mod(Module, Debug, GCStatistics, Clocklimit, Keepalive) ->
 
     %%Start main task
     Cog=cog:start(),
-    {ok, cog:add_and_notify(Cog,main_task,[Module,self()], #process_info{method= <<".main"/utf8>>})}.
+    {ok, cog:add_and_notify(Cog,main_task,none,null,[Module,self()], #process_info{method= <<".main"/utf8>>})}.
 
 end_mod(TaskRef, InfluxdbEnabled) ->
     %%Wait for termination of main task and idle state
     RetVal=task:join(TaskRef),
-    %% modelapi:print_statistics(),
+    %% modelapi_v2:print_statistics(),
     coverage:write_files(),
     cog_monitor:waitfor(),
     gc:stop(),

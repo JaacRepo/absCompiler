@@ -55,6 +55,7 @@ aspect Typing {
     /* TODO: Those will lead to utter confusion when running without stdlib, as e.g. RelExps depend on Bool. */
     syn Type Model.getUnitType() = getStdDataType("Unit");
     syn Type Model.getIntType() = getStdDataType("Int");
+    syn Type Model.getFloatType() = getStdDataType("Float");
     syn Type Model.getRatType() = getStdDataType("Rat");
     syn Type Model.getBoolType() = getStdDataType("Bool");
     syn Type Model.getStringType() = getStdDataType("String");
@@ -93,7 +94,19 @@ aspect Typing {
     eq TypeSynDecl.getType() { 
         return getValue().getType(); 
     }
-    
+
+    // Partially defined functions and friends
+    eq PartialFunctionDecl.getType() = getTypeUse().getType();
+    eq ParFnApp.getType() = getDecl().getType();
+
+    syn Type ParFnAppParam.getType();
+    eq AnonymousFunctionDecl.getType() = getPureExp().getType();
+    eq NamedParFnAppParam.getType() {
+        FunctionDecl fun = (FunctionDecl) getModuleDecl().lookup(new KindedName(Kind.FUN, getName()));
+        if (fun == null) return UnknownType.INSTANCE;
+        else return fun.getType();
+    }
+
     eq ExceptionDecl.getType() = getModel().getExceptionType();
     eq UnknownDecl.getType() = UnknownType.INSTANCE;
     eq AmbiguousDecl.getType() = UnknownType.INSTANCE;
@@ -102,6 +115,7 @@ aspect Typing {
     eq ConstructorArg.getType() = getTypeUse().getType();
     
     syn Type VarOrFieldDecl.getType();
+    eq FunctionParamDecl.getType() = getModel().getUnitType();
     eq TypedVarOrFieldDecl.getType() = getAccess().getType();
     eq PatternVarDecl.getType() {
    	 PatternVar v = (PatternVar) getParent(); 
@@ -131,11 +145,6 @@ aspect Typing {
     /* EXPRESSIONS */
     
     syn lazy Type Exp.getType();
-    
-    eq IncompleteExp.getType() {
-        return UnknownType.INSTANCE;
-    }
-
     
     eq AsyncCall.getType() {  
         return getModel().getFutType(getCallType());
@@ -212,14 +221,21 @@ aspect Typing {
         return new DataTypeType((ParametricDataTypeDecl)d,this).withAnnotations(getAnnotations());
     }
     eq Unary.getType() = getOperand().getType();
-    eq AddAddExp.getType() = getLeft().getType();  // number or string
     eq ArithmeticExp.getType() {
         // Int or Rat, depending on operands
         Type mostGeneralType = getLeft().getType();
         if (mostGeneralType.isIntType()) return getRight().getType();
         return mostGeneralType;
     }
-    eq DivMultExp.getType() = getModel().getRatType(); // Rat in all cases
+    eq DivMultExp.getType() {
+        if (getLeft().getType().isFloatType()
+            && getRight().getType().isFloatType()) {
+            return getModel().getFloatType();
+        } else {
+            // Int / Int becomes Rat
+            return getModel().getRatType();
+        }
+    }
     eq BoolExp.getType() = getModel().getBoolType();
     eq RelationalExpr.getType() = getModel().getBoolType();
     eq IfExp.getType() {
@@ -301,6 +317,7 @@ aspect Typing {
     }
     eq LetExp.getType() = getExp().getType();
     eq IntLiteral.getType() = getModel().getIntType();
+    eq FloatLiteral.getType() =  getModel().getFloatType();
     eq StringLiteral.getType() =  getModel().getStringType();
     eq NullExp.getType() = NullType.INSTANCE;
     eq ThisExp.getType() = getContextDecl().getType();
@@ -365,8 +382,20 @@ aspect Typing {
     }
     
     FunctionDecl implements HasParams;
+    PartialFunctionDecl implements HasParams;
+    ParFnAppParam implements HasParams;
     ClassDecl implements HasParams;
     MethodSig implements HasParams;
+
+    @Override
+    public List<ParamDecl> NamedParFnAppParam.getParams() {
+        Decl decl = getModuleDecl().lookup(new KindedName(Kind.FUN, getName()));
+        if (decl.isUnknown()) {
+            return new List<>();
+        }
+        FunctionDecl fun = (FunctionDecl) decl;
+        return fun.getParams();
+    }
 
     /**
      * These classes have actual parameters.
@@ -386,7 +415,7 @@ aspect Typing {
     public interface HasTypes {
       java.util.List<Type> getTypes();
     }
-    
+
     DataConstructor implements HasTypes;
     ParametricFunctionDecl implements HasTypes;
     ConstructorPattern implements HasTypes;
@@ -428,6 +457,7 @@ aspect Typing {
     Exp implements HasType;
     Pattern implements HasType;
     ConstructorArg implements HasType;
+    ParFnAppParam implements HasType;
 
     // Unfortunately must be in same file as the interface. TypeChecker would be a better place:
 
@@ -442,12 +472,6 @@ aspect Typing {
         TypeCheckerHelper.addTypeParamBinding(node, binding, getTypes(), args);
         return binding;
     }
-
-    /* Component */
-    eq NewLocExp.getType() { return getModel().getStdDataType("Location"); }
-    eq GetLocExp.getType() { return getModel().getStdDataType("Location"); }
-    eq GetFatherExp.getType() { return getModel().getStdDataType("Location"); }
-
 
 }
 

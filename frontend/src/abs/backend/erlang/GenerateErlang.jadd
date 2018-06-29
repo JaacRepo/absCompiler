@@ -92,8 +92,8 @@ aspect GenerateErlang {
   @Override
   public void FunctionDecl.generateErlangCode(ErlApp ea) throws IOException{
       CodeStream ecs= ea.getFunStream(moduleName());
-      if (ERLANG_OVERRIDES.containsKey(qualifiedName())) {
-          ecs.println(ERLANG_OVERRIDES.get(qualifiedName()));
+      if (ERLANG_OVERRIDES.containsKey(getQualifiedName())) {
+          ecs.println(ERLANG_OVERRIDES.get(getQualifiedName()));
       } else {
           ErlUtil.functionHeader(ecs,"f_"+getName(),"Cog=#cog{ref=CogRef}",getParams());
           Vars vars = Vars.n(getParams());
@@ -113,19 +113,26 @@ aspect GenerateErlang {
     ecs.print("builtin");
   }
 
+  public void PartialFunctionDecl.generateErlangCode(ErlApp ea) throws IOException {
+    // ignore
+  }
+
   private final static Set<String> FnApp.ERLANG_BUILTINS=ImmutableSet.of(
       "ABS.StdLib.currentms", "ABS.Meta.getProductLine",
       "ABS.StdLib.lowlevelDeadline", "ABS.StdLib.print", "ABS.StdLib.println",
       "ABS.StdLib.random", "ABS.StdLib.strlen", "ABS.StdLib.substr",
       "ABS.DC.thisDC", "ABS.StdLib.toString",
       "ABS.StdLib.truncate", "ABS.StdLib.numerator", "ABS.StdLib.denominator",
-      "ABS.Scheduler.method", "ABS.Scheduler.arrival");
+      "ABS.StdLib.float", "ABS.StdLib.rat",
+      "ABS.StdLib.floor", "ABS.StdLib.ceil",
+      "ABS.StdLib.sqrt", "ABS.StdLib.log", "ABS.StdLib.exp",
+      "ABS.Scheduler.method", "ABS.Scheduler.arrival", "ABS.Scheduler.proc_deadline");
   public  void FnApp.generateErlangCode(CodeStream ecs,Vars vars){
     FunctionDecl decl = (FunctionDecl)getDecl();
     boolean builtin = decl.getFunctionDef() instanceof BuiltinFunctionDef;
     if(builtin){
-      if(!ERLANG_BUILTINS.contains(decl.qualifiedName()))
-          throw new NotImplementedYetException(this, "The builtin function "+decl.qualifiedName() + " is not implemented in the Erlang backend yet");
+      if(!ERLANG_BUILTINS.contains(decl.getQualifiedName()))
+          throw new NotImplementedYetException(this, "The builtin function "+decl.getQualifiedName() + " is not implemented in the Erlang backend yet");
       ecs.print("builtin:");
       ecs.print(decl.getName());
     }
@@ -374,8 +381,7 @@ aspect GenerateErlang {
       getExp().generateErlangCode(buffer,vars);
       buffer.close();
       String exp = sw.toString().substring(ecs.getIndent().length());
-      // won't clash with any ABS variable because UPPERCASE
-      String varName = vars.inc("TEMP");
+      String varName = vars.getTemp();
       ecs.print(varName + " = " + exp);
       if (isNewDC) {
           ecs.println(",");
@@ -403,8 +409,7 @@ aspect GenerateErlang {
       CodeStream buffer = new CodeStream(new WriterOutputStream(sw, Charset.forName("UTF-8")),ecs.getIndent());
       getRetExp().generateErlangCode(buffer,vars);
       buffer.close();
-      // won't class with any variable because UPPERCASE
-      String varName = vars.inc("TEMP");
+      String varName = vars.getTemp();
       ecs.format("%s = %s", varName,sw.toString().substring(ecs.getIndent().length()));
       ecs.println(",");
       ecs.format("cog_monitor:new_dc(%s)", varName);
@@ -455,12 +460,19 @@ aspect GenerateErlang {
 
   @Override
   public void AsyncCall.generateErlangCode(CodeStream ecs,Vars vars){
+    Stmt stmt = CompilerUtils.findStmtForExpression(this);
+    PureExp deadline = CompilerUtils.getAnnotationValueFromName(stmt.getAnnotationList(), "ABS.StdLib.Deadline");
     ecs.print("future:start(");
     getCallee().generateErlangCode(ecs,vars);
     ecs.format(",'m_%s',",getMethod());
     ErlUtil.buildParams(ecs,getParams(),vars,true);
-    ecs.format(",#process_info{method= <<\"%s\"/utf8>>},", getMethod());
-    ecs.print("Cog,");
+    ecs.format(",#process_info{method= <<\"%s\"/utf8>>, creation={dataTime,builtin:currentms(Cog)}, proc_deadline=", getMethod());
+    if (deadline != null) {
+        deadline.generateErlangCode(ecs, vars);
+    } else {
+        ecs.print("dataInfDuration");
+    }
+    ecs.print("},Cog,");
     ecs.print(vars.toStack());
     ecs.print(")");
   }
@@ -490,6 +502,11 @@ aspect GenerateErlang {
 
   @Override
   public void IntLiteral.generateErlangCode(CodeStream ecs,Vars vars) {
+    ecs.print( getContent());
+  }
+
+  @Override
+  public void FloatLiteral.generateErlangCode(CodeStream ecs,Vars vars) {
     ecs.print( getContent());
   }
 
@@ -669,17 +686,17 @@ aspect GenerateErlang {
     }
     else {
       ecs.print("(");
-      if (getLeft().getType().isIntType() && getRight().getType().isIntType() ){
-        getLeft().generateErlangCode(ecs, vars);
-        ecs.print(" + ");
-        getRight().generateErlangCode(ecs, vars);
-      }
-      else {
-        ecs.print(" rationals:add(");
-        getLeft().generateErlangCode(ecs,vars);
-        ecs.print(",");
-        getRight().generateErlangCode(ecs,vars);
-        ecs.print(")");
+      if (getLeft().getType().isIntType() && getRight().getType().isIntType()
+          || getLeft().getType().isFloatType() && getRight().getType().isFloatType()) {
+          getLeft().generateErlangCode(ecs, vars);
+          ecs.print(" + ");
+          getRight().generateErlangCode(ecs, vars);
+      } else {
+          ecs.print(" rationals:add(");
+          getLeft().generateErlangCode(ecs,vars);
+          ecs.print(",");
+          getRight().generateErlangCode(ecs,vars);
+          ecs.print(")");
       }
       ecs.print(") ");
     }
@@ -688,16 +705,17 @@ aspect GenerateErlang {
   @Override
   public void SubAddExp.generateErlangCode(CodeStream ecs,Vars vars){
     ecs.print("(");
-    if (getLeft().getType().isIntType() && getRight().getType().isIntType() ){
+    if (getLeft().getType().isIntType() && getRight().getType().isIntType()
+        || getLeft().getType().isFloatType() && getRight().getType().isFloatType()) {
         getLeft().generateErlangCode(ecs,vars);
         ecs.print(" - ");
-        getRight().generateErlangCode(ecs,vars);}
-    else{
-      ecs.print(" rationals:sub(");
-      getLeft().generateErlangCode(ecs,vars);
-      ecs.print(",");
-      getRight().generateErlangCode(ecs,vars);
-      ecs.print(")");
+        getRight().generateErlangCode(ecs,vars);
+    } else {
+        ecs.print(" rationals:sub(");
+        getLeft().generateErlangCode(ecs,vars);
+        ecs.print(",");
+        getRight().generateErlangCode(ecs,vars);
+        ecs.print(")");
     }
     ecs.print(") ");
   }
@@ -705,7 +723,8 @@ aspect GenerateErlang {
   @Override
   public void MultMultExp.generateErlangCode(CodeStream ecs,Vars vars){
     ecs.print("(");
-    if (getLeft().getType().isIntType() && getRight().getType().isIntType() ) {
+    if (getLeft().getType().isIntType() && getRight().getType().isIntType()
+        || getLeft().getType().isFloatType() && getRight().getType().isFloatType()) {
       getLeft().generateErlangCode(ecs,vars);
       ecs.print(" * ");
       getRight().generateErlangCode(ecs,vars);
@@ -722,19 +741,31 @@ aspect GenerateErlang {
 
   @Override
   public void DivMultExp.generateErlangCode(CodeStream ecs,Vars vars){
-    ecs.print(" rationals:rdiv(");
-    getLeft().generateErlangCode(ecs,vars);
-    ecs.print(",");
-    getRight().generateErlangCode(ecs,vars);
-    ecs.print(") ");
+      if (getLeft().getType().isFloatType() && getRight().getType().isFloatType()) {
+          getLeft().generateErlangCode(ecs,vars);
+          ecs.print(" / ");
+          getRight().generateErlangCode(ecs,vars);
+      } else {
+          ecs.print(" rationals:rdiv(");
+          getLeft().generateErlangCode(ecs,vars);
+          ecs.print(",");
+          getRight().generateErlangCode(ecs,vars);
+          ecs.print(") ");
+      }
   }
 
   @Override
   public void ModMultExp.generateErlangCode(CodeStream ecs,Vars vars){
-    if (getLeft().getType().isIntType() && getRight().getType().isIntType() ) {
+    if (getLeft().getType().isIntType() && getRight().getType().isIntType()) {
         ecs.print("(");
         getLeft().generateErlangCode(ecs,vars);
         ecs.print(" rem ");
+        getRight().generateErlangCode(ecs,vars);
+        ecs.print(") ");
+    } else if (getLeft().getType().isFloatType() && getRight().getType().isFloatType()) {
+        ecs.print("math:fmod(");
+        getLeft().generateErlangCode(ecs,vars);
+        ecs.print(", ");
         getRight().generateErlangCode(ecs,vars);
         ecs.print(") ");
     } else {
@@ -836,7 +867,7 @@ aspect GenerateErlang {
           branches.add(sw.toString());
           vars.updateTemp(v);
       }
-      // Now print statments and mergelines for each branch.
+      // Now print statements and mergelines for each branch.
       java.util.List<String> mergeLines = vars.merge(branches_vars);
       boolean first = true;
       Iterator<String> ib = branches.iterator();
@@ -870,7 +901,7 @@ aspect GenerateErlang {
     ecs.print("case ");
     ecs.setIndent(external.getIndent());
     getExpr().generateErlangCode(ecs, vars);
-    ecs.println(" of ");
+    ecs.println(" of");
     ecs.incIndent();
     for (CaseBranch b : getBranchs()) {
         Vars v = vars.pass();
@@ -899,7 +930,7 @@ aspect GenerateErlang {
   @Override
   public void PatternVarUse.generateErlangCode(CodeStream prePattern,CodeStream ecs,Vars vars){
       VarOrFieldDecl decl = this.getDecl();
-      if (decl instanceof FieldDecl) {
+      if (decl instanceof FieldDecl || decl instanceof ClassParamDecl) {
           String tmp=vars.getTemp();
           prePattern.pf("%s=get(O,'%s'),",tmp,getName());
           ecs.print(tmp);
@@ -923,7 +954,7 @@ aspect GenerateErlang {
   public void ConstructorPattern.generateErlangCode(CodeStream prePattern,CodeStream ecs,Vars vars){
       //Handling for bool
       final String c = getDataConstructor().getName();
-      final String qualifiedName = getDataConstructor().qualifiedName();
+      final String qualifiedName = getDataConstructor().getQualifiedName();
       if("True".equals(c) || "False".equals(c)) {
           ecs.print(c.toLowerCase());
       } else if (qualifiedName.equals("ABS.StdLib.Nil")) {
@@ -953,30 +984,49 @@ aspect GenerateErlang {
   }
 
   public void DataConstructorExp.generateErlangCode(CodeStream ecs,Vars vars){
-    //Handling for bool
-    final String c = getDataConstructor().getName();
-    final String qualifiedName = getDataConstructor().qualifiedName();
-    if("True".equals(c) || "False".equals(c)) {
-        ecs.print(c.toLowerCase());
+    final String simpleName = getDataConstructor().getName();
+    final String qualifiedName = getDataConstructor().getQualifiedName();
+    if (qualifiedName.equals("ABS.StdLib.False")) {
+        ecs.print("false");
+    } else if (qualifiedName.equals("ABS.StdLib.True")) {
+        ecs.print("true");
     } else if (qualifiedName.equals("ABS.StdLib.Nil")) {
         ecs.print("[]");
     } else if (qualifiedName.equals("ABS.StdLib.Cons")) {
+        String interp = "";
         ecs.print("[");
-        getParam(0).generateErlangCode(ecs, vars);
-        ecs.print(" | ");
-        getParam(1).generateErlangCode(ecs, vars);
+        PureExp c = this;
+        while (c instanceof DataConstructorExp
+               && ((DataConstructorExp)c).getDataConstructor().getQualifiedName()
+               .equals("ABS.StdLib.Cons")) {
+            DataConstructorExp cp = (DataConstructorExp)c;
+            ecs.print(interp);
+            interp = ", ";
+            cp.getParam(0).generateErlangCode(ecs, vars);
+            c = cp.getParam(1);
+        }
+        if (c instanceof DataConstructorExp
+            && ((DataConstructorExp)c).getDataConstructor().getQualifiedName()
+            .equals("ABS.StdLib.Nil")) {
+            // do nothing
+        } else {
+            ecs.print(" | ");
+            c.generateErlangCode(ecs, vars);
+        }
         ecs.print("]");
     } else {
-        if(getParams().getNumChild() > 0)
-            ecs.print("{");
-        ecs.print("data");
-        ecs.print(c);
-        for (PureExp p : getParams()) {
-            ecs.print(",");
-            p.generateErlangCode(ecs,vars);
-        }
-        if(getParams().getNumChild() > 0)
+        if(getParams().getNumChild() == 0) {
+            ecs.print("data");
+            ecs.print(simpleName);
+        } else {
+            ecs.print("{ data");
+            ecs.print(simpleName);
+            for (PureExp p : getParams()) {
+                ecs.print(",");
+                p.generateErlangCode(ecs,vars);
+            }
             ecs.print("}");
+        }
     }
   }
 

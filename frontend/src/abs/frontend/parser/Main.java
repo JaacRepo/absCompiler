@@ -25,6 +25,7 @@ import javax.xml.parsers.ParserConfigurationException;
 
 import choco.kernel.model.constraints.Constraint;
 import abs.frontend.mtvl.ChocoSolver;
+import abs.backend.common.InternalBackendException;
 import abs.common.Constants;
 import abs.common.WrongProgramArgumentException;
 import abs.frontend.analyser.SemanticCondition;
@@ -51,7 +52,6 @@ public class Main {
     protected boolean stdlib = true;
     protected boolean dump = false;
     protected boolean debug = false;
-    protected boolean allowIncompleteExpr = false;
     protected LocationType defaultLocationType = null;
     protected boolean locationTypeInferenceEnabled = false;
     // Must be public for AspectJ instrumentation
@@ -73,58 +73,64 @@ public class Main {
 
 
     public static void main(final String... args)  {
-        new Main().mainMethod(args);
+        int result = new Main().mainMethod(args);
+        if (result != 0) System.exit(result);
     }
 
-    public void mainMethod(final String... args) {
+    public int mainMethod(final String... args) {
+        int result = 0;
         try {
             java.util.List<String> argslist = Arrays.asList(args);
             if (argslist.contains("-help") || argslist.contains("-h") || argslist.contains("--help")) {
-                printUsageAndExit();
-            }
-            if (argslist.contains("-maude")) {
-                abs.backend.maude.MaudeCompiler.main(args);
+                printUsage();
+            } else if (argslist.contains("-version") || argslist.contains("--version")) {
+                printVersion();
+            } else if (argslist.contains("-maude")) {
+                result = abs.backend.maude.MaudeCompiler.doMain(args);
             } else if(argslist.contains("-java")) {
-                abs.backend.java.JavaBackend.main(args);
+                result = abs.backend.java.JavaBackend.doMain(args);
             } else if (argslist.contains("-erlang")) {
-                abs.backend.erlang.ErlangBackend.main(args);
+                result = abs.backend.erlang.ErlangBackend.doMain(args);
             } else if (argslist.contains("-prolog")) {
-                abs.backend.prolog.PrologBackend.main(args);
+                result = abs.backend.prolog.PrologBackend.doMain(args);
             } else if (argslist.contains("-coreabs")) {
-                abs.backend.coreabs.CoreAbsBackend.main(args);
+                result = abs.backend.coreabs.CoreAbsBackend.doMain(args);
             } else if (argslist.contains("-prettyprint")) {
-                abs.backend.prettyprint.PrettyPrinterBackEnd.main(args);
+                result = abs.backend.prettyprint.PrettyPrinterBackEnd.doMain(args);
             } else if (argslist.contains("-outline")) {
-                abs.backend.outline.OutlinePrinterBackEnd.main(args);
-            } else if (argslist.contains("-scala")) {
-                abs.backend.scala.ScalaBackend.main(args);
-            }else {
+                result = abs.backend.outline.OutlinePrinterBackEnd.doMain(args);
+            }   else if (argslist.contains("-scala")) {
+            abs.backend.scala.ScalaBackend.main(args);
+            } else {
                 Model m = parse(args);
-                if (m.hasParserErrors()) {
-                    printParserErrorAndExit();
+                if (m.hasParserErrors() || m.hasErrors() || m.hasTypeErrors()) {
+                    printErrorMessage();
+                    result = 1;
                 }
             }
+        } catch (InternalBackendException e) {
+            // don't print stack trace here
+            printError(e.getMessage());
+            result = 1;
         } catch (Exception e) {
             if (e.getMessage() == null) { e.printStackTrace(); }
             assert e.getMessage() != null : e.toString();
-            printErrorAndExit(e.getMessage());
+            printError(e.getMessage());
+            result = 1;
         }
+        return result;
     }
 
     public void setWithStdLib(boolean withStdLib) {
         this.stdlib = withStdLib;
     }
 
-    public void setAllowIncompleteExpr(boolean b) {
-        allowIncompleteExpr = b;
-    }
-
     public void setTypeChecking(boolean b) {
         typecheck = b;
     }
 
-    public java.util.List<String> parseArgs(String[] args) {
-        ArrayList<String> remainingArgs = new ArrayList<String>();
+    public java.util.List<String> parseArgs(String[] args) throws InternalBackendException {
+        ArrayList<String> remainingArgs = new ArrayList<>();
 
         for (String arg : args) {
             if (arg.equals("-dump"))
@@ -133,8 +139,6 @@ public class Main {
                 debug = true;
             else if (arg.equals("-v"))
                 verbose = true;
-            else if (arg.equals("-version") || arg.equals("--version"))
-                printVersionAndExit();
             else if (arg.startsWith("-product=")) {
                 fullabs = true;
                 product = arg.split("=")[1];
@@ -186,25 +190,25 @@ public class Main {
                 ignoreattr = true;
             } else if (arg.equals("-h") || arg.equals("-help")
                     || arg.equals("--help")) {
-                printUsageAndExit();
+                printUsage();
             } else
                 remainingArgs.add(arg);
         }
         return remainingArgs;
     }
 
-    public Model parse(final String[] args) throws IOException, DeltaModellingException, WrongProgramArgumentException, ParserConfigurationException {
+    public Model parse(final String[] args) throws IOException, DeltaModellingException, WrongProgramArgumentException, ParserConfigurationException, InternalBackendException {
         Model m = parseFiles(parseArgs(args).toArray(new String[0]));
-        analyzeModel(m);
+        analyzeFlattenAndRewriteModel(m);
         return m;
     }
 
-    public Model parseFiles(String... fileNames) throws IOException {
+    public Model parseFiles(String... fileNames) throws IOException, InternalBackendException {
         if (fileNames.length == 0) {
-            printErrorAndExit("Please provide at least one input file");
+            throw new IllegalArgumentException("Please provide at least one input file");
         }
 
-        java.util.List<CompilationUnit> units = new ArrayList<CompilationUnit>();
+        java.util.List<CompilationUnit> units = new ArrayList<>();
 
         for (String fileName : fileNames) {
             if (fileName.startsWith("-")) {
@@ -228,17 +232,28 @@ public class Main {
         if (stdlib)
             units.add(getStdLib());
 
-        List<CompilationUnit> unitList = new List<CompilationUnit>();
+        List<CompilationUnit> unitList = new List<>();
         for (CompilationUnit u : units) {
             unitList.add(u);
         }
 
         Model m = new Model(unitList);
-        Main.exceptionHack(m);
         return m;
     }
 
-    public void analyzeModel(Model m) throws WrongProgramArgumentException, DeltaModellingException, FileNotFoundException, ParserConfigurationException {
+    /**
+     * This horrible method does too many things and needs to be in every code
+     * path that expects a working model, especially when products are
+     * involved.  (ProductDecl.getProduct() returns null until
+     * evaluateAllProductDeclarations() was called once.)
+     *
+     * @param m
+     * @throws WrongProgramArgumentException
+     * @throws DeltaModellingException
+     * @throws FileNotFoundException
+     * @throws ParserConfigurationException
+     */
+    public void analyzeFlattenAndRewriteModel(Model m) throws WrongProgramArgumentException, DeltaModellingException, FileNotFoundException, ParserConfigurationException {
         m.verbose = verbose;
         m.debug = debug;
 
@@ -263,6 +278,8 @@ public class Main {
         rewriteModel(m, product);
         m.flattenTraitOnly();
         m.collapseTraitModifiers();
+
+        m.expandPartialFunctions();
 
         // check PL before flattening
         if (checkspl)
@@ -356,7 +373,7 @@ public class Main {
                 // TODO: when/if we incorporate feature parameters into the
                 // productline feature declarations (as we should), we need to
                 // adjust the DataConstructor arguments here.
-                featureDecl.addDataConstructor(new DataConstructor(f.getName(), new List<ConstructorArg>()));
+                featureDecl.addDataConstructor(new DataConstructor(f.getName(), new List<>()));
             }
             // Adjust product_name() function
             productNameFun.setFunctionDef(new ExpFunctionDef(new StringLiteral(productname)));
@@ -364,15 +381,15 @@ public class Main {
             ProductDecl p = null;
             if (productname != null) p = m.findProduct(productname);
             if (p != null) {
-                DataConstructorExp feature_arglist = new DataConstructorExp("Cons", new List<PureExp>());
+                DataConstructorExp feature_arglist = new DataConstructorExp("Cons", new List<>());
                 DataConstructorExp current = feature_arglist;
                 for (Feature f : p.getProduct().getFeatures()) {
-                    DataConstructorExp next = new DataConstructorExp("Cons", new List<PureExp>());
+                    DataConstructorExp next = new DataConstructorExp("Cons", new List<>());
                     // TODO: when/if we incorporate feature parameters into
                     // the productline feature declarations (as we should), we
                     // need to adjust the DataConstructorExp arguments here.
-                    current.addParam(new DataConstructorExp(f.getName(), new List<PureExp>()));
-                    current.addParam(next);
+                    current.addParamNoTransform(new DataConstructorExp(f.getName(), new List<>()));
+                    current.addParamNoTransform(next);
                     current = next;
                 }
                 current.setConstructor("Nil");
@@ -381,33 +398,6 @@ public class Main {
         }
         m.flushTreeCache();
     }
-
-    /** Handle exceptions: add exceptions as constructors to the
-     ABS.StdLib.Exception datatype.
-     */
-    public static void exceptionHack(Model m) {
-        assert m != null;
-        if (m.getExceptionType() == null) {
-            return; // Eclipse?
-        }
-        DataTypeDecl e = (DataTypeDecl)(m.getExceptionType().getDecl());
-        if (e != null) {
-            // TODO: if null and not -nostdlib, throw an error
-            for (Decl decl : m.getDecls()) {
-                if (decl.isException()) {
-                    ExceptionDecl e1 = (ExceptionDecl)decl;
-                    // KLUDGE: what do we do about annotations to exceptions?
-                    DataConstructor d = new DataConstructor(e1.getName(), e1.getConstructorArgs().treeCopyNoTransform());
-                    d.setPositionFromNode(e1);
-                    d.setFileName(e1.getFileName());
-                    d.exceptionDecl = e1;
-                    e1.dataConstructor = d;
-                    e.addDataConstructor(d);
-                }
-            }
-        }
-    }
-
 
     /**
      * TODO: Should probably be introduced in Model through JastAdd by MTVL package.
@@ -460,7 +450,7 @@ public class Main {
                     System.out.println("Searching for solution that includes " + product + "...");
                 if (productDecl != null) {
                     ChocoSolver s = m.instantiateCSModel();
-                    HashSet<Constraint> newcs = new HashSet<Constraint>();
+                    HashSet<Constraint> newcs = new HashSet<>();
                     productDecl.getProduct().getProdConstraints(s.vars, newcs);
                     for (Constraint c: newcs)
                         s.addConstraint(c);
@@ -474,7 +464,7 @@ public class Main {
                 if (verbose)
                     System.out.println("Searching for solution that includes " + product + "...");
                 ChocoSolver s = m.instantiateCSModel();
-                HashSet<Constraint> newcs = new HashSet<Constraint>();
+                HashSet<Constraint> newcs = new HashSet<>();
                 s.addIntVar("difference", 0, 50);
                 if (productDecl != null) {
                     m.getDiffConstraints(productDecl.getProduct(), s.vars, newcs, "difference");
@@ -490,7 +480,7 @@ public class Main {
                 if (verbose)
                     System.out.println("Searching for solution that includes "+product+"...");
                 ChocoSolver s = m.instantiateCSModel();
-                HashSet<Constraint> newcs = new HashSet<Constraint>();
+                HashSet<Constraint> newcs = new HashSet<>();
                 s.addIntVar("noOfFeatures", 0, 50);
                 if (m.getMaxConstraints(s.vars,newcs, "noOfFeatures")) {
                     for (Constraint c: newcs) s.addConstraint(c);
@@ -585,7 +575,7 @@ public class Main {
     }
 
     public java.util.List<CompilationUnit> parseABSPackageFile(File file) throws IOException {
-        java.util.List<CompilationUnit> res = new ArrayList<CompilationUnit>();
+        java.util.List<CompilationUnit> res = new ArrayList<>();
         parseABSPackageFile(res, file);
         return res;
     }
@@ -650,35 +640,27 @@ public class Main {
         units.add(parseUnit(file, null, reader));
     }
 
-    protected static void printParserErrorAndExit() {
-        System.err.println("\nCompilation failed with syntax errors.");
-        System.exit(1);
+    protected static void printErrorMessage() {
+        System.err.println("\nCompilation failed.");
     }
 
-    protected static void printErrorAndExit(String error) {
+    protected static void printError(String error) {
         assert error != null;
         System.err.println("\nCompilation failed:\n");
         System.err.println("  " + error);
         System.err.println();
-        System.exit(1);
     }
 
-    protected void printUsageAndExit() {
-        printUsage();
-        System.exit(1);
-    }
-
-    protected static void printVersionAndExit() {
+    protected static void printVersion() {
         System.out.println("ABS Tool Suite v"+getVersion());
         System.out.println("Built from git tree " + getGitVersion());
-        System.exit(1);
     }
 
 
-    public CompilationUnit getStdLib() throws IOException {
+    public CompilationUnit getStdLib() throws IOException, InternalBackendException {
         InputStream stream = Main.class.getClassLoader().getResourceAsStream(ABS_STD_LIB);
         if (stream == null) {
-            printErrorAndExit("Could not find ABS Standard Library");
+            throw new InternalBackendException("Could not find ABS Standard Library");
         }
         return parseUnit(new File(ABS_STD_LIB), null, new InputStreamReader(stream));
     }
@@ -686,9 +668,9 @@ public class Main {
     public static void printUsage() {
         printHeader();
         System.out.println(""
-                + "Usage: java abs.frontend.parser.Main [backend] [options] <absfiles>\n\n"
-                + "  <absfiles>     ABS files/directories/packages to parse\n\n"
-                + "Available backends:\n"
+                + "Usage: java abs.frontend.parser.Main [backend] [options] <absfiles>\n"
+                + "\n  <absfiles>     ABS files/directories/packages to parse\n"
+                + "\nAvailable backends:\n"
                 + "  -maude         generate Maude code\n"
                 + "  -java          generate Java code\n"
                 + "  -erlang        generate Erlang code\n"
@@ -697,8 +679,6 @@ public class Main {
                 + "  -prettyprint   pretty-print ABS code\n\n"
                 + "Common options:\n"
                 + "  -version       print version\n"
-                + "  -v             verbose output\n"
-                + "  -debug         print stacktrace on exception\n"
                 + "  -product=<PID> build given product by applying deltas (PID is the product ID)\n"
                 + "  -checkspl      Check the SPL for errors\n"
                 + "  -notypecheck   disable typechecking\n"
@@ -710,7 +690,6 @@ public class Main {
                 + "  -locscope=<scope> \n"
                 + "                 sets the location aliasing scope to <scope>\n"
                 + "                 where <scope> in " + Arrays.toString(LocationTypingPrecision.values()) + "\n"
-                + "  -dump          dump AST to standard output \n"
                 + "  -solve         solve constraint satisfaction problem (CSP) for the feature\n"
                 + "                 model and print a solution\n"
                 + "  -solveall      print ALL solutions for the CSP\n"
@@ -727,7 +706,11 @@ public class Main {
                 + "  -nsol          count the number of solutions\n"
                 + "  -noattr        ignore the attributes\n"
                 + "  -check=<PID>   check satisfiability of a product with name PID\n"
-                + "  -h             print this message\n");
+                + "  -h             print this message\n"
+                + "\nDiagnostic options:\n"
+                + "  -v             verbose output\n"
+                + "  -debug         print stacktrace for crashes during compilation\n"
+                + "  -dump          dump AST to standard output\n");
         abs.backend.maude.MaudeCompiler.printUsage();
         abs.backend.java.JavaBackend.printUsage();
         abs.backend.erlang.ErlangBackend.printUsage();
@@ -771,7 +754,7 @@ public class Main {
         System.out.println();
     }
 
-    private static String getVersion() {
+    public static String getVersion() {
         String version = Main.class.getPackage().getImplementationVersion();
         if (version == null)
             return "HEAD";
@@ -780,7 +763,7 @@ public class Main {
     }
 
 
-    private static String getGitVersion() {
+    public static String getGitVersion() {
         String version = Main.class.getPackage().getSpecificationVersion();
         if (version == null)
             return "HEAD-dirty";
@@ -820,19 +803,19 @@ public class Main {
     }
 
     public static Iterable<File> toFiles(Iterable<String> fileNames) {
-        ArrayList<File> files = new ArrayList<File>();
+        ArrayList<File> files = new ArrayList<>();
         for (String s : fileNames) {
             files.add(new File(s));
         }
         return files;
     }
 
-    public Model parse(File file, String sourceCode, InputStream stream) throws IOException {
+    public Model parse(File file, String sourceCode, InputStream stream) throws IOException, InternalBackendException {
         return parse(file, sourceCode, new BufferedReader(new InputStreamReader(stream)));
     }
 
-    public Model parse(File file, String sourceCode, Reader reader) throws IOException  {
-        List<CompilationUnit> units = new List<CompilationUnit>();
+    public Model parse(File file, String sourceCode, Reader reader) throws IOException, InternalBackendException  {
+        List<CompilationUnit> units = new List<>();
         if (stdlib)
             units.add(getStdLib());
         units.add(parseUnit(file, sourceCode, reader));
@@ -850,22 +833,8 @@ public class Main {
     }
 
     public static Model parseString(String s, boolean withStdLib) throws Exception {
-        return parseString(s,withStdLib,false);
-    }
-
-    /**
-     * Calls {@link #parseString(String, boolean, boolean, boolean)} with withDbLib set to false.
-     *
-     * @param s
-     * @param withStdLib
-     * @param allowIncompleteExpr
-     * @return Model
-     * @throws Exception
-     */
-    public static Model parseString(String s, boolean withStdLib, boolean allowIncompleteExpr) throws Exception {
         Main m = new Main();
         m.setWithStdLib(withStdLib);
-        m.setAllowIncompleteExpr(allowIncompleteExpr);
         return m.parse(null, s, new StringReader(s));
     }
 

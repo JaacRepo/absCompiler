@@ -1,10 +1,11 @@
-/** 
+/**
  * This file is licensed under the terms of the Modified BSD License.
  */
 package abs.backend.erlang;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FilenameFilter;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.IOException;
@@ -23,9 +24,9 @@ import org.apache.commons.io.output.NullOutputStream;
 
 /**
  * Translates given ABS Files to an Erlang program
- * 
+ *
  * @author Georg Göri
- * 
+ *
  */
 public class ErlangBackend extends Main {
 
@@ -37,33 +38,41 @@ public class ErlangBackend extends Main {
     }
 
     private File destDir = new File("gen/erl/");
+    private File http_index_file = null;
+    private File http_static_dir = null;
     private EnumSet<CompileOptions> compileOptions = EnumSet.noneOf(CompileOptions.class);
 
     public static int minErlangVersion = 19;
 
     public static void main(final String... args) {
+        doMain(args);
+    }
+
+    public static int doMain(final String... args) {
+        int result = 0;
         ErlangBackend backEnd = new ErlangBackend();
         try {
-            backEnd.compile(args);
+            result = backEnd.compile(args);
         } catch (InternalBackendException e) {
             System.err.println(e.getMessage());
-            System.exit(1);
+            return 1;
         } catch (NotImplementedYetException e) {
             System.err.println(e.getMessage());
-            System.exit(0);
+            return 1;
         } catch (Exception e) {
             System.err.println("An error occurred during compilation:\n" + e.getMessage());
             if (backEnd.debug) {
                 e.printStackTrace();
             }
-            System.exit(1);
+            return 1;
         }
+        return result;
     }
 
     @Override
-    public List<String> parseArgs(String[] args) {
+    public List<String> parseArgs(String[] args) throws InternalBackendException {
         List<String> restArgs = super.parseArgs(args);
-        List<String> remainingArgs = new ArrayList<String>();
+        List<String> remainingArgs = new ArrayList<>();
 
         for (int i = 0; i < restArgs.size(); i++) {
             String arg = restArgs.get(i);
@@ -72,10 +81,23 @@ public class ErlangBackend extends Main {
             } else if (arg.equals("-d")) {
                 i++;
                 if (i == restArgs.size()) {
-                    System.err.println("Please provide an output directory");
-                    System.exit(1);
+                    throw new InternalBackendException("Please provide an output directory");
                 } else {
                     destDir = new File(restArgs.get(i));
+                }
+            } else if(arg.equals("-http-index-file")) {
+                i++;
+                if (i == restArgs.size()) {
+                    throw new InternalBackendException("Please provide an index.html file");
+                } else {
+                    http_index_file = new File(restArgs.get(i));
+                }
+            } else if(arg.equals("-http-static-dir")) {
+                i++;
+                if (i == restArgs.size()) {
+                    throw new InternalBackendException("Please provide a directory with static files");
+                } else {
+                    http_static_dir = new File(restArgs.get(i));
                 }
             } else if (arg.equals("-cover")) {
                 compileOptions.add(CompileOptions.COVERAGE);
@@ -92,14 +114,22 @@ public class ErlangBackend extends Main {
         System.out.println("Erlang Backend (-erlang):\n"
                            + "  -d <dir>       Create code below <dir> (default gen/erl/)\n"
                            + "  -cover         Compile with run-time statement execution count recording.\n"
-                           + "                 Results in <dir>/absmodel/*.gcov after model finishes)\n");
+                           + "                 Results in <dir>/absmodel/*.gcov after model finishes)\n"
+                           + "  -http-index-file <file>\n"
+                           + "                 Display <file> when accessing the Model API via browser\n"
+                           + "  -http-static-dir <dir>\n"
+                           + "                 Make contents of <dir> accessible below /static/ in Model API\n\n"
+                           + "  For help on Erlang runtime options, start model with -h\n");
     }
 
-    private void compile(String[] args) throws Exception {
+    private int compile(String[] args) throws Exception {
         final Model model = parse(args);
-        if (model.hasParserErrors() || model.hasErrors() || model.hasTypeErrors())
-            printParserErrorAndExit();
+        if (model.hasParserErrors() || model.hasErrors() || model.hasTypeErrors()) {
+            printErrorMessage();
+            return 1;
+        }
         compile(model, destDir, compileOptions);
+        return 0;
     }
 
     private static boolean isWindows() {
@@ -130,17 +160,31 @@ public class ErlangBackend extends Main {
         return version;
     }
 
-    public static void compile(Model m, File destDir, EnumSet<CompileOptions> options) throws IOException, InterruptedException, InternalBackendException {
+    public void compile(Model m, File destDir, EnumSet<CompileOptions> options) throws IOException, InterruptedException, InternalBackendException {
         int version = getErlangVersion();
         if (version < minErlangVersion) {
             String message = "ABS requires at least erlang version " + Integer.toString(minErlangVersion) + ", installed version is " + Integer.toString(version);
             throw new InternalBackendException(message);
         }
-        ErlApp erlApp = new ErlApp(destDir);
+        ErlApp erlApp = new ErlApp(destDir, http_index_file, http_static_dir);
         m.generateErlangCode(erlApp, options);
         erlApp.close();
-	String[] rebarProgram = new String[] {"escript", "../bin/rebar", "compile"};
-        Process p = Runtime.getRuntime().exec(rebarProgram, null, new File(destDir, "absmodel"));
+
+        List<String> compile_command = new ArrayList<String>();
+        // We used to call "rebar compile" here but calling erlc directly
+        // removes 1.5s from the compile time
+        compile_command.add("erlc");
+        compile_command.add("-I");
+        compile_command.add(destDir + "/absmodel/include");
+        compile_command.add("-o");
+        compile_command.add(destDir + "/absmodel/ebin");
+        Arrays.stream(new File(destDir, "absmodel/src/")
+                      .listFiles(new FilenameFilter() {
+                              public boolean accept(File dir, String name) {
+                                  return name.endsWith(".erl");
+                              }}))
+            .forEach((File f) -> compile_command.add(f.toString()));
+        Process p = Runtime.getRuntime().exec(compile_command.toArray(new String[0]));
         if (options.contains(CompileOptions.VERBOSE)) IOUtils.copy(p.getInputStream(), System.out);
         else IOUtils.copy(p.getInputStream(), new NullOutputStream());
         p.waitFor();

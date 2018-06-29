@@ -6,7 +6,7 @@
 // TODO for moving tools from beaver/flex to antlr:
 // - Generate code for full ABS
 // - Implement the raiseExceptions flag
-// - Implement parsing of incomplete expressions and generate the corresponding AST
+
 grammar ABS;
 
 TraditionalComment : '/*' .*? '*/' -> skip ;
@@ -17,12 +17,14 @@ WhiteSpace : [ \t\f\r\n]+ -> skip ;
 
 fragment LETTER : [A-Za-z] ;
 fragment DIGIT : [0-9] ;
+fragment EXPONENT : ('e' | 'E' | 'e+' | 'E+' | 'e-' | 'E-') DIGIT+;
 IDENTIFIER : [a-z] (LETTER | DIGIT | '_')* ;
 TYPE_IDENTIFIER : [A-Z] (LETTER | DIGIT | '_')* ;
 INTLITERAL : '0' | [1-9] DIGIT* ;
 STRINGLITERAL
   :  '"' (STR_ESC | ~('\\' | '"' | '\r' | '\n'))* '"'
   ;
+FLOATLITERAL : INTLITERAL? '.' DIGIT+ EXPONENT? ;
 fragment STR_ESC
   :  '\\' ('\\' | '"' | 't' | 'n' | 'r')
   ;
@@ -85,6 +87,9 @@ eff_exp : pure_exp '.' 'get'                               # GetExp
     ;
 
 pure_exp : qualified_identifier '(' pure_exp_list ')'      # FunctionExp
+    | qualified_identifier
+        '(' function_list ')'
+        '(' pure_exp_list ')'                              # PartialFunctionExp
     | qualified_identifier '[' pure_exp_list ']'           # VariadicFunctionExp
     | qualified_type_identifier ('(' pure_exp_list ')')?   # ConstructorExp
     | op=(NEGATION | NEGATION_CREOL | MINUS) pure_exp      # UnaryExp
@@ -95,6 +100,7 @@ pure_exp : qualified_identifier '(' pure_exp_list ')'      # FunctionExp
     | l=pure_exp op='&&' r=pure_exp                        # AndExp
     | l=pure_exp op='||' r=pure_exp                        # OrExp
     | var_or_field_ref                                     # VarOrFieldExp
+    | FLOATLITERAL                                         # FloatExp
     | INTLITERAL                                           # IntExp
     | STRINGLITERAL                                        # StringExp
     | 'this'                                               # ThisExp
@@ -148,7 +154,6 @@ stmt : annotations type_exp IDENTIFIER ('=' exp)? ';'              # VardeclStmt
     | annotations 'throw' pure_exp ';'                             # ThrowStmt
     | annotations 'die' pure_exp ';'                               # DieStmt
     | annotations 'movecogto' pure_exp ';'                         # MoveCogToStmt
-        // TODO: rebind, subloc
     | annotations exp ';'                                          # ExpStmt
         // Prefer case expression to case statement, so case statement comes later
     | annotations 'case' c=pure_exp '{' casestmtbranch* '}'        # CaseStmt
@@ -196,6 +201,29 @@ function_decl : annotations
         paramlist
         '='
         ('builtin' | e=pure_exp) ';' ;
+
+// Partially defined functions
+
+function_name_decl: IDENTIFIER ;
+function_name_list: (function_name_decl (',' function_name_decl)*)? ;
+type_use_paramlist: ('<' p+=type_use (',' p+=type_use)* '>') ;
+
+par_function_decl : annotation*
+        'def' type_use n=IDENTIFIER
+        ('<' p+=TYPE_IDENTIFIER (',' p+=TYPE_IDENTIFIER)*  '>')?
+        '(' functions=function_name_list ')'
+        params=paramlist
+        '='
+        e=pure_exp ';' ;
+
+// used by PartialFunctionExp
+function_name_param_decl: IDENTIFIER ;
+function_param: function_name_param_decl | anon_function_decl ;
+function_list: (function_param (',' function_param)*)? ;
+
+// Anonymous functions
+
+anon_function_decl : params=paramlist '=>' pure_exp ;
 
 // Interfaces
 
@@ -252,6 +280,7 @@ module_import : 'import'
 // exactly one token
 decl : datatype_decl
     | function_decl
+    | par_function_decl
     | typesyn_decl
     | exception_decl
     | interface_decl

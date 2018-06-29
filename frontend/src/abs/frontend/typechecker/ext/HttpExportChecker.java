@@ -1,20 +1,20 @@
-/** 
- * Copyright (c) 2016, The Envisage Consortium. All rights reserved. 
+/**
+ * Copyright (c) 2016, The Envisage Consortium. All rights reserved.
  * This file is licensed under the terms of the Modified BSD License.
  */
 package abs.frontend.typechecker.ext;
 
-import java.util.List;
 import java.util.Set;
 import java.util.HashSet;
 
 import abs.common.CompilerUtils;
 
-import abs.frontend.analyser.AnnotationHelper;
 import abs.frontend.analyser.ErrorMessage;
 import abs.frontend.analyser.SemanticWarning;
 import abs.frontend.analyser.TypeError;
 import abs.frontend.ast.*;
+import abs.frontend.typechecker.Type;
+import abs.frontend.typechecker.DataTypeType;
 
 public class HttpExportChecker extends DefaultTypeSystemExtension {
 
@@ -22,10 +22,18 @@ public class HttpExportChecker extends DefaultTypeSystemExtension {
         super(m);
     }
 
-    private boolean isParameterUsableFromHTTP(ParamDecl param) {
-        if (param.getType().isBoolType()) return true;
-        if (param.getType().isStringType()) return true;
-        if (param.getType().isIntType()) return true;
+    private boolean isTypeUsableFromHTTP(Type paramtype) {
+        if (paramtype.isBoolType()) return true;
+        if (paramtype.isStringType()) return true;
+        if (paramtype.isIntType()) return true;
+        if (paramtype.isFloatType()) return true;
+        if (paramtype.isDataType()) {
+            DataTypeType ptype = (DataTypeType) paramtype;
+            if (ptype.getDecl().getQualifiedName().equals("ABS.StdLib.List")) {
+                return isTypeUsableFromHTTP(ptype.getTypeArg(0));
+            }
+            return false;
+        }
         return false;
     }
 
@@ -34,8 +42,8 @@ public class HttpExportChecker extends DefaultTypeSystemExtension {
         for (MethodSig ms : i.getBodyList()) {
             if (ms.isHTTPCallable()) {
                 for (ParamDecl p : ms.getParamList()) {
-                    if (!isParameterUsableFromHTTP(p)) {
-                        errors.add(new TypeError(p, ErrorMessage.WRONG_HTTPCALLABLE, p.getName(), p.getType().getQualifiedName()));
+                    if (!isTypeUsableFromHTTP(p.getType())) {
+                        errors.add(new TypeError(p, ErrorMessage.WRONG_HTTPCALLABLE, p.getName(), p.getType().toString()));
                     }
                 }
             }
@@ -45,7 +53,7 @@ public class HttpExportChecker extends DefaultTypeSystemExtension {
     @Override
     public void checkDataTypeDecl(DataTypeDecl decl) {
         for (DataConstructor c : decl.getDataConstructors()) {
-            Set<String> names = new HashSet<String>();
+            Set<String> names = new HashSet<>();
             for (ConstructorArg ca : c.getConstructorArgs()) {
                 ASTNode arg = null;
                 String key = null;

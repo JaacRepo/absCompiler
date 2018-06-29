@@ -50,22 +50,22 @@ public class DeployInformationClassSpecification {
     _paramList = paramList;
     _paramType = paramType;
     _provide = -1;                   // per default, the provide is infinite
-    _cost = new HashMap<String, Integer>();
-    _params = new HashMap<String, IDeployInformationClassSpecificationRequirement>();
+    _cost = new HashMap<>();
+    _params = new HashMap<>();
     for(String param: _paramList) {  // per default, all fields must be filled by the user.
       _params.put(param, new DeployInformationClassSpecificationRequirementUser(param));
     }
-    _names = new HashSet<String>();
+    _names = new HashSet<>();
   }
 
   public void setProvide(int p) { _provide = p; }
   public int getProvide() { return _provide; }
 
-  public void addCost(String resource, int cost) { _cost.put(resource, new Integer(cost)); }
+  public void addCost(String resource, int cost) { _cost.put(resource, cost); }
   public int getCost(String resource) {
     Integer cost = _cost.get(resource);
     if(cost == null) { return 0; }
-    else { return cost.intValue(); }
+    else { return cost; }
   }
 
 

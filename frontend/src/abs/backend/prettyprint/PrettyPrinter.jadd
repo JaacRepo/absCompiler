@@ -59,6 +59,7 @@ aspect doPrettyPrinter {
         formatter.afterStmt();
 
         for (Import i : getImportList()) {
+            if (i instanceof StarImport && ((StarImport)i).getModuleName().equals(Constants.STDLIB_NAME)) continue;
             i.doPrettyPrint(stream, formatter);
             stream.println();
             formatter.afterStmt();
@@ -571,6 +572,50 @@ aspect doPrettyPrinter {
         formatter.afterStmt();
     }
 
+    public void PartialFunctionDecl.doPrettyPrint(PrintWriter stream, ABSFormatter formatter) {
+      getAnnotationList().doPrettyPrint(stream, formatter, "");
+      if (getNumAnnotation() > 0) {
+          stream.println();
+          formatter.afterStmt();
+      }
+      stream.print("def ");
+      getTypeUse().doPrettyPrint(stream, formatter);
+      stream.print(" ");
+      stream.print(getName());
+      doPrettyPrintTypeParam(stream, formatter);
+      stream.print("(");
+      getParamList().doPrettyPrint(stream, formatter, ",");
+      stream.print(") (");
+      getFuncParamList().doPrettyPrint(stream, formatter, ",");
+      stream.print(") = ");
+      getPartialFunctionDef().doPrettyPrint(stream, formatter);
+      formatter.afterStmt();
+    }
+
+    public void FunctionParamDecl.doPrettyPrint(PrintWriter stream, ABSFormatter formatter) {
+      stream.print(getName());
+    }
+
+    public void PartialFunctionDef.doPrettyPrint(PrintWriter stream, ABSFormatter formatter) {
+        stream.println();
+        formatter.afterOpenBrace();
+        formatter.afterStmt();
+        getPureExp().doPrettyPrint(stream, formatter);
+        stream.print(";");
+        formatter.beforeCloseBrace();
+    }
+
+    public void NamedParFnAppParam.doPrettyPrint(PrintWriter stream, ABSFormatter formatter) {
+        stream.print(getName());
+    }
+
+    public void AnonymousFunctionDecl.doPrettyPrint(PrintWriter stream, ABSFormatter formatter) {
+        stream.print("(");
+        getParams().doPrettyPrint(stream, formatter, ",");
+        stream.print(") => ");
+        getPureExp().doPrettyPrint(stream, formatter);
+    }
+
     public void FunctionDecl.doPrettyPrintTypeParam(PrintWriter stream, ABSFormatter formatter) { }
 
     public void ParametricFunctionDecl.doPrettyPrintTypeParam(PrintWriter stream, ABSFormatter formatter) { 
@@ -579,6 +624,16 @@ aspect doPrettyPrinter {
             getTypeParameterList().doPrettyPrint(stream, formatter, ",");
             stream.print(">");
         }	
+    }
+
+    public void PartialFunctionDecl.doPrettyPrintTypeParam(PrintWriter stream, ABSFormatter formatter) {}
+
+    public void ParametricPartialFunctionDecl.doPrettyPrintTypeParam(PrintWriter stream, ABSFormatter formatter) {
+       if (getNumTypeParameter() > 0) {
+           stream.print("<");
+           getTypeParameterList().doPrettyPrint(stream, formatter, ",");
+           stream.print(">");
+       }
     }
 
     public void BuiltinFunctionDef.doPrettyPrint(PrintWriter stream, ABSFormatter formatter) {
@@ -1127,9 +1182,23 @@ aspect doPrettyPrinter {
     }
 
     public void FnApp.doPrettyPrint(PrintWriter stream, ABSFormatter formatter) {
+        // This is a gross special case in pretty printing that follows a
+        // gross special case in syntax.  Consider adding a "first-class" list
+        // literal that can be used outside of the special constructor call
+        // syntax?
+        boolean noParens = getNumParam() == 1 && getParam(0) instanceof ListLiteral;
+        stream.print(getName());
+        if (!noParens) stream.print("(");
+        getParamList().doPrettyPrint(stream, formatter, ",");
+        if (!noParens) stream.print(")");
+    }
+
+    public void ParFnApp.doPrettyPrint(PrintWriter stream, ABSFormatter formatter) {
         stream.print(getName());
         stream.print("(");
         getParamList().doPrettyPrint(stream, formatter, ",");
+        stream.print(") (");
+        getFuncParamList().doPrettyPrint(stream, formatter, ",");
         stream.print(")");
     }
 
@@ -1182,16 +1251,19 @@ aspect doPrettyPrinter {
         stream.print("\"");
     }
 
+    public void FloatLiteral.doPrettyPrint(PrintWriter stream, ABSFormatter formatter) {
+        stream.print(getContent());
+    }
+
     public void ListLiteral.doPrettyPrint(PrintWriter stream, ABSFormatter formatter) {
+        stream.print("[");
+        String interp = "";
         for (PureExp e : getPureExps()) {
-            stream.print("Cons(");
+            stream.print(interp);
+            interp = ", ";
             e.doPrettyPrint(stream, formatter);
-            stream.print(", ");
         }
-        stream.print("Nil");
-        for (int i = 0; i < getNumPureExp(); i++) {
-            stream.print(")");
-        }
+        stream.print("]");
     }
 
     public void NullExp.doPrettyPrint(PrintWriter stream, ABSFormatter formatter) {

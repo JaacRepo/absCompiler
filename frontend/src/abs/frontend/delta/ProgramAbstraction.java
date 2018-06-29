@@ -53,16 +53,16 @@ public class ProgramAbstraction {
     // Constructor
     public ProgramAbstraction(SemanticConditionList errors) {
         this.errors = errors;
-        deltas = new ArrayList<DeltaDecl>();
-        classes = new HashMap<String, Map<String, Map<String,java.util.List<String>>>>();
-        interfaces = new HashMap<String, Map<String, Map<String,java.util.List<String>>>>();
+        deltas = new ArrayList<>();
+        classes = new HashMap<>();
+        interfaces = new HashMap<>();
     }
 
     // Copy constructor
     public ProgramAbstraction(ProgramAbstraction sourceTA) {
         this.errors = sourceTA.errors;
-        this.deltas = new ArrayList<DeltaDecl>(sourceTA.deltas);
-        classes = new HashMap<String, Map<String, Map<String,java.util.List<String>>>>();
+        this.deltas = new ArrayList<>(sourceTA.deltas);
+        classes = new HashMap<>();
         for (String className : sourceTA.classes.keySet()) {
             classAdd(className);
             assert classes.get(className).containsKey("fields");
@@ -75,7 +75,7 @@ public class ProgramAbstraction {
             for (String iface : sourceTA.classes.get(className).get("interfaces").keySet())
                 classes.get(className).get("interfaces").put(iface, sourceTA.classes.get(className).get("methods").get(iface));
         }
-        interfaces = new HashMap<String, Map<String, Map<String,java.util.List<String>>>>();
+        interfaces = new HashMap<>();
         for (String ifName : sourceTA.interfaces.keySet()) {
             interfaceAdd(ifName);
             assert interfaces.get(ifName).containsKey("methods");
@@ -96,7 +96,7 @@ public class ProgramAbstraction {
      * Classes
      */
     public void classAdd(AddClassModifier node) {
-        String className = node.qualifiedName();
+        String className = node.getQualifiedName();
         if (classes.containsKey(className))
             errors.add(new SPLTypeError(node, ErrorMessage.DUPLICATE_CLASS_NAME, deltas, product, className,
                     // TODO add " at file:line" with location of original definition
@@ -114,13 +114,13 @@ public class ProgramAbstraction {
         }
     }
     public void classAdd(String className) {
-        classes.put(className, new HashMap<String, Map<String,java.util.List<String>>>());
-        classes.get(className).put("fields", new HashMap<String,java.util.List<String>>());
-        classes.get(className).put("methods", new HashMap<String,java.util.List<String>>());
-        classes.get(className).put("interfaces", new HashMap<String,java.util.List<String>>());
+        classes.put(className, new HashMap<>());
+        classes.get(className).put("fields", new HashMap<>());
+        classes.get(className).put("methods", new HashMap<>());
+        classes.get(className).put("interfaces", new HashMap<>());
     }
     public void classRemove(RemoveClassModifier node) {
-        String className = node.qualifiedName();
+        String className = node.getQualifiedName();
         if (classes.containsKey(className))
             classes.remove(className);
         else
@@ -214,7 +214,7 @@ public class ProgramAbstraction {
      * - modify
      */
     public void interfaceAdd(AddInterfaceModifier node) {
-        String name = node.qualifiedName();
+        String name = node.getQualifiedName();
         if (interfaces.containsKey(name))
             errors.add(new SPLTypeError(node, ErrorMessage.DUPLICATE_INTERFACE_NAME, deltas, product, name,
                     // TODO add " at file:line" with location of original definition
@@ -223,8 +223,8 @@ public class ProgramAbstraction {
             interfaceAdd(name);
     }
     public void interfaceAdd(String name) {
-        interfaces.put(name, new HashMap<String, Map<String,java.util.List<String>>>());
-        interfaces.get(name).put("methods", new HashMap<String,java.util.List<String>>());
+        interfaces.put(name, new HashMap<>());
+        interfaces.get(name).put("methods", new HashMap<>());
     }
 
     // types: first entry is return type; rest is argument types
@@ -249,7 +249,7 @@ public class ProgramAbstraction {
      * Helper method
      */
     public boolean existsClass(ModifyClassModifier node) {
-        String className = node.qualifiedName();
+        String className = node.getQualifiedName();
         if (classes.containsKey(className)) {
             return true;
         } else {
@@ -261,8 +261,8 @@ public class ProgramAbstraction {
     @Override
     public String toString() {
         StringBuilder s = new StringBuilder();
-        final Map<String,Object> sortedClasses = new TreeMap<String, Object>(classes);
-        final Map<String,Object> sortedInterfaces = new TreeMap<String, Object>(interfaces);
+        final Map<String,Object> sortedClasses = new TreeMap<>(classes);
+        final Map<String,Object> sortedInterfaces = new TreeMap<>(interfaces);
 
         for (String cls : sortedClasses.keySet()) {
             s.append("  Class: " + cls + "\n" + "    Fields:\n");
@@ -294,7 +294,7 @@ public class ProgramAbstraction {
      * I.e. we simply use the Access's String representation (and not Access.getType()).
      */
     public static java.util.List<String> getMethodParameterTypes(MethodSig sig) {
-        java.util.List<String> types = new ArrayList<String>();
+        java.util.List<String> types = new ArrayList<>();
         types.add(sig.getReturnType().toString());
         for (ParamDecl par : sig.getParams()) {
             types.add(par.getAccess().toString());

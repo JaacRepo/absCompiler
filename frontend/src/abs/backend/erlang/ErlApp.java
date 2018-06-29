@@ -1,5 +1,5 @@
 /**
- * 
+ *
  * This file is licensed under the terms of the Modified BSD License.
  */
 package abs.backend.erlang;
@@ -21,9 +21,8 @@ import java.util.jar.JarFile;
 
 import org.apache.commons.io.FileUtils;
 
-import sun.net.www.protocol.file.FileURLConnection;
-
 import abs.backend.common.CodeStream;
+import abs.backend.common.InternalBackendException;
 import abs.common.CompilerUtils;
 import abs.frontend.ast.*;
 
@@ -33,22 +32,26 @@ import com.google.common.io.Files;
 
 /**
  * Represents a to be generate Erlang application.
- * 
+ *
  * Provides facilities to create a module and creates a copy of the runtime
  * there.
- * 
+ *
  * @author Georg Göri
- * 
+ *
  */
 public class ErlApp {
 
     public File destDir;
     public File destCodeDir;
     public File destIncludeDir;
+    public File index_file;
+    public File static_dir;
 
-    public Map<String, CodeStream> funMod = new HashMap<String, CodeStream>();
+    public Map<String, CodeStream> funMod = new HashMap<>();
 
-    public ErlApp(File destDir) throws IOException {
+    public ErlApp(File destDir, File http_index_file, File http_static_dir) throws IOException, InternalBackendException {
+        // FIXME this should probably be a method; strange to have a
+        // class which does all its work in the constructor
         super();
         this.destDir = destDir;
         this.destCodeDir = new File(destDir, "absmodel/src/");
@@ -57,6 +60,11 @@ public class ErlApp {
         FileUtils.cleanDirectory(destDir);
         destDir.mkdirs();
         new File(destDir, "absmodel/ebin").mkdir();
+        index_file = http_index_file;
+        static_dir = http_static_dir;
+        if (static_dir != null && !static_dir.isDirectory()) {
+            throw new InternalBackendException("Please provide a directory with static files");
+        }
         copyRuntime();
     }
 
@@ -71,7 +79,7 @@ public class ErlApp {
 
     /**
      * All functions for an ABS module are stored in one Erlang module.
-     * 
+     *
      * This method creates the necessary stream.
      */
     public CodeStream getFunStream(String moduleName) throws FileNotFoundException, UnsupportedEncodingException {
@@ -103,10 +111,12 @@ public class ErlApp {
             // do not copy this since absmodulename.hrl is generated later --
             // runtime.erl and main_app.erl use the wrong constant
             // "absmodel/ebin/*",
+            "absmodel/ebin/absmodel.app",
             "absmodel/Emakefile",
             "Dockerfile",
             "start_console",
             "run",
+            "run.bat",
             "absmodel/rebar.config",
             "bin/*",
             "link_sources",
@@ -118,7 +128,7 @@ public class ErlApp {
             "start_console",
             "link_sources"
             );
-        
+
     private static final String RUNTIME_PATH = "abs/backend/erlang/runtime/";
 
     private void copyRuntime() throws IOException {
@@ -128,6 +138,7 @@ public class ErlApp {
         // how to handle the other case.
         URLConnection resource = getClass().getResource("").openConnection();
         try {
+            new File(destDir + "/absmodel/ebin").mkdirs();
             for (String f : RUNTIME_FILES) {
                 if (f.endsWith("/*")) {
                     String dirname = f.substring(0, f.length() - 2);
@@ -137,7 +148,7 @@ public class ErlApp {
                     if (resource instanceof JarURLConnection) {
                         copyJarDirectory(((JarURLConnection) resource).getJarFile(),
                                 inname, outname);
-                    } else if (resource instanceof FileURLConnection) {
+                    } else if (resource.getURL().getProtocol().equals("file")) {
                         /* stolz: This at least works for the unit tests from within Eclipse */
                         File file = new File("src");
                         assert file.exists();
@@ -154,6 +165,16 @@ public class ErlApp {
                     file.getParentFile().mkdirs();
                     Files.asByteSink(file).writeFrom(is);
                 }
+            }
+            if (index_file != null) {
+                File http_out_file = new File(destDir + "/absmodel/priv/index.html");
+                http_out_file.getParentFile().mkdirs();
+                FileUtils.copyFile(index_file, http_out_file);
+            }
+            if (static_dir != null) {
+                File static_out_dir = new File(destDir + "/absmodel/priv/static");
+                static_out_dir.mkdirs();
+                FileUtils.copyDirectory(static_dir, static_out_dir);
             }
         } finally {
             if (is != null)
@@ -172,8 +193,7 @@ public class ErlApp {
                 String relFilename = entry.getName().substring(inname.length());
                 if (!entry.isDirectory()) {
                     is = jarFile.getInputStream(entry);
-                    ByteStreams.copy(is, 
-                                     Files.asByteSink(new File(outname, relFilename)).openStream());
+                    ByteStreams.copy(is, Files.asByteSink(new File(outname, relFilename)).openStream());
                 } else {
                     new File(outname, relFilename).mkdirs();
                 }
@@ -187,6 +207,8 @@ public class ErlApp {
         hcs.println("%%This file is licensed under the terms of the Modified BSD License.");
         hcs.println("-undef(ABSMAINMODULE).");
         hcs.println("-define(ABSMAINMODULE," + erlModulename + ").");
+        hcs.println("-undef(ABSCOMPILERVERSION).");
+        hcs.println("-define(ABSCOMPILERVERSION,\"" + abs.frontend.parser.Main.getVersion() + "." + abs.frontend.parser.Main.getGitVersion() + "\").");
         hcs.close();
     }
 
@@ -232,7 +254,7 @@ public class ErlApp {
                                 if (key != null) {
                                     s.println(mapSeparator);
                                     mapSeparator = ",";
-                                    s.format("<<\"%s\"/utf8>> => modelapi:abs_to_json(lists:nth(%s, Abs))",
+                                    s.format("<<\"%s\"/utf8>> => modelapi_v2:abs_to_json(lists:nth(%s, Abs))",
                                              key,
                                              // nth() indexes 1-based and
                                              // we need to skip over the first

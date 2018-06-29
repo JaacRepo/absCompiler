@@ -73,6 +73,15 @@ public class FunctionalTests extends SemanticTests {
     public void dataTypeEq4() {
         assertEvalTrue("{ Bool testresult = list[1, 2, 3] == list[1/1, 2/1, 3/1]; }");
     }
+    
+    @Test
+    public void dataTypeEq5() {
+        // Test for a crash in the Erlang backend: rational numbers are
+        // encoded as 2-tuples of integers, data types are encoded as tagged
+        // tuples and were compared left-to-right.  This case reduced to a
+        // division by zero.
+        assertEvalTrue("data A = A(Int, Int); { Bool testresult = A(1, 0) == A(1, 0); }");
+    }
 
     @Test
     public void dataTypeNEq() {
@@ -180,6 +189,17 @@ public class FunctionalTests extends SemanticTests {
     }
     
     @Test
+    public void exceptionDataType() {
+        assertEvalTrue("exception MyE(Bool); { Bool testresult = False; MyE e = MyE(True); case e { MyE(value) => testresult = value; } }");
+    }
+    
+    @Test
+    public void exceptionSelector() {
+        assertEvalTrue("exception MyE(Bool myevalue); { MyE e = MyE(True); Bool testresult = myevalue(e); }");
+    }
+    
+    
+    @Test
     public void letExp() {
         assertEvalTrue("def Bool f() = let (Bool x) = True in x;" + CALL_F);
     }
@@ -266,6 +286,11 @@ public class FunctionalTests extends SemanticTests {
     @Test
     public void caseBoundParameter() throws Exception {
         assertEvalTrue(new File("tests/abssamples/backend/FunctionalTests/caseBoundParameter.abs"));
+     }
+
+    @Test
+    public void caseBoundClassParameter() throws Exception {
+        assertEvalTrue(new File("tests/abssamples/backend/FunctionalTests/caseBoundClassParameter.abs"));
      }
 
     @Test

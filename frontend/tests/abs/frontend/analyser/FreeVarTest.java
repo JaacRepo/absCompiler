@@ -1,5 +1,5 @@
-/** 
- * Copyright (c) 2009-2011, The HATS Consortium. All rights reserved. 
+/**
+ * Copyright (c) 2009-2011, The HATS Consortium. All rights reserved.
  * This file is licensed under the terms of the Modified BSD License.
  */
 package abs.frontend.analyser;
@@ -12,7 +12,16 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import abs.frontend.FrontendTest;
+import abs.frontend.ast.ClassDecl;
 import abs.frontend.ast.Exp;
+import abs.frontend.ast.MethodImpl;
+import abs.frontend.ast.ReturnStmt;
+import abs.frontend.ast.Stmt;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
+import org.junit.Assert;
+import org.junit.Test;
 
 public class FreeVarTest extends FrontendTest {
 
@@ -129,8 +138,39 @@ public class FreeVarTest extends FrontendTest {
         Exp e = getExp("{ Int x = 3; Int y = 4; Int z = 5; Int a = if x == 3 then y else z; }", 3);
         assertEquals(e.getFreeVars(), "x", "y", "z");
     }
-    
+
+    @Test
+    public void parFnApp() {
+        Exp e = getSecondExp("def Unit f()(Bool b) = Unit; { Bool b = True; Unit u = f()(b); }");
+        assertEquals(e.getFreeVars(), "b");
+    }
+
+    @Test
+    public void parFnAppAnonymousFunction() {
+        Exp e = getSecondExp("def Bool f(g)() = g(); def Bool g() = True; { Bool b = True; Bool b2 = f(() => b)(); }");
+        assertEquals(e.getFreeVars(), "b");
+    }
+
+    @Test
+    public void fieldUse() {
+        ClassDecl clazz = getFirstClassDecl(assertParseOkStdLib(
+            "class C {"
+                + "Int i = 0;"
+                + "Int m() {"
+                + "return i + 1;"
+                + "}"
+                + "}"
+        ));
+        MethodImpl method = clazz.lookupMethod("m");
+        assertNotNull(method);
+        Stmt stmt = method.getBlock().getStmt(0);
+        assertTrue(stmt instanceof ReturnStmt);
+        ReturnStmt returnStmt = (ReturnStmt) stmt;
+        Exp exp = returnStmt.getRetExp();
+        assertEquals(exp.getFreeVars(), "i");
+    }
+
     public void assertEquals(Set<String> actual, String... expected) {
-        Assert.assertEquals(new HashSet<String>(Arrays.asList(expected)), actual);
+        Assert.assertEquals(new HashSet<>(Arrays.asList(expected)), actual);
     }
 }

@@ -1,5 +1,5 @@
-/** 
- * Copyright (c) 2009-2011, The HATS Consortium. All rights reserved. 
+/**
+ * Copyright (c) 2009-2011, The HATS Consortium. All rights reserved.
  * This file is licensed under the terms of the Modified BSD License.
  */
 package abs.frontend.typesystem;
@@ -21,6 +21,7 @@ import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameters;
 
+import abs.backend.common.InternalBackendException;
 import abs.common.WrongProgramArgumentException;
 import abs.frontend.FrontendTest;
 import abs.frontend.analyser.SemanticCondition;
@@ -68,7 +69,7 @@ public class CaseStudyTypeChecking extends FrontendTest {
         m = assertParseFilesOk(input, TYPE_CHECK, WITH_STD_LIB);
     }
 
-    protected Model assertParseFilesOk(String srcFolder, Config... config) throws IOException, WrongProgramArgumentException {
+    protected Model assertParseFilesOk(String srcFolder, Config... config) throws IOException, WrongProgramArgumentException, InternalBackendException {
         File srcFolderF = new File(srcFolder);
         assertTrue(srcFolder,srcFolderF.exists());
         Main main = new Main();
@@ -98,7 +99,7 @@ public class CaseStudyTypeChecking extends FrontendTest {
     }
 
     private List<String> findAbsFiles(File srcFolder) {
-        List<String> result = new java.util.LinkedList<String>();
+        List<String> result = new java.util.LinkedList<>();
         if (srcFolder.exists() && !srcFolder.isDirectory()) {
             assertTrue(srcFolder.getName().endsWith(".abs"));
             result.add(srcFolder.getAbsolutePath());

@@ -6,7 +6,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 
 
-
 public class DefaultScalaWriterSupplier implements JavaWriterSupplier {
 
 	private final PathResolver pathResolver;
@@ -15,12 +14,12 @@ public class DefaultScalaWriterSupplier implements JavaWriterSupplier {
 	  private final Path outputDirectory;
 
 	  public DefaultScalaWriterSupplier(PathResolver pathResolver, String packageName,
-	      Path outputDirectory) {
+                                        Path outputDirectory) {
 	    this(pathResolver, packageName, ".scala", outputDirectory);
 	  }
 
 	  public DefaultScalaWriterSupplier(PathResolver pathResolver, String packageName, String extension,
-	      Path outputDirectory) {
+                                        Path outputDirectory) {
 	    this.pathResolver = pathResolver;
 	    this.packageName = packageName;
 	    this.extension = extension;

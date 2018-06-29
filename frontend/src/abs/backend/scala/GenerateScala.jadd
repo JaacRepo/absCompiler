@@ -1,14 +1,11 @@
 import java.io.*;
 
+
 import java.io.IOException;
 
 import abs.backend.scala.ScalaVisitor;
 import abs.backend.scala.ScalaWriter;
 
-import abs.api.cwi.ABSFuture;
-import abs.api.cwi.Actor;
-import abs.api.cwi.Functional;
-import abs.api.cwi.LocalActor;
 import abs.frontend.ast.Decl;
 import abs.frontend.ast.Model;
 import abs.frontend.ast.ModuleDecl;
@@ -77,6 +74,10 @@ aspect GenerateScala {
 	public void TraitDecl.accept(ScalaVisitor v,ScalaWriter w) {
 		v.visit(this,w);	
 	}
+
+	public void PartialFunctionDecl.accept(ScalaVisitor v,ScalaWriter w) {
+    		v.visit(this,w);
+    }
 	
 	/*IMPORTS*/
 	
@@ -166,7 +167,8 @@ aspect GenerateScala {
 	public void MainBlock.accept(ScalaVisitor v,ScalaWriter w) {
 		v.visit(this,w);
 	}
-	
+
+	@Override
 	public void InitBlock.accept(ScalaVisitor v,ScalaWriter w) {
 		v.visit(this,w);
 	}
@@ -179,22 +181,22 @@ aspect GenerateScala {
 		v.visit(this,w);
 	}
 	
-	public void RebindStmt.accept(ScalaVisitor v,ScalaWriter w) {
+/*	public void RebindStmt.accept(ScalaVisitor v,ScalaWriter w) {
 		v.visit(this,w);
 	}
 	
 	public void MoveStmt.accept(ScalaVisitor v,ScalaWriter w) {
 		v.visit(this,w);
 	}
-
+*/
 	public void MoveCogToStmt.accept(ScalaVisitor v,ScalaWriter w) {
 		v.visit(this,w);
 	}
 	
-	public void IncompleteStmt.accept(ScalaVisitor v,ScalaWriter w) {
+/*	public void IncompleteStmt.accept(ScalaVisitor v,ScalaWriter w) {
 		v.visit(this,w);
 	}
-	
+*/
 	
 	
 	public abstract void Exp.accept(ScalaVisitor v, ScalaWriter w);
@@ -222,6 +224,10 @@ aspect GenerateScala {
 	public void FnApp.accept(ScalaVisitor v, ScalaWriter w){
 		v.visit(this,w);
 	}
+
+	public void ParFnApp.accept(ScalaVisitor v, ScalaWriter w){
+    		v.visit(this,w);
+    }
 	
 	public void CaseExp.accept(ScalaVisitor v, ScalaWriter w){
 		v.visit(this,w);
@@ -235,14 +241,14 @@ aspect GenerateScala {
 		v.visit(this,w);
 	}
 	
-	public void GetLocExp.accept(ScalaVisitor v, ScalaWriter w){
+/*	public void GetLocExp.accept(ScalaVisitor v, ScalaWriter w){
 		v.visit(this,w);
 	}
-	
+
 	public void GetFatherExp.accept(ScalaVisitor v, ScalaWriter w){
 		v.visit(this,w);
 	}
-	
+*/
 	
 	
 	
@@ -255,7 +261,12 @@ aspect GenerateScala {
 	public void IntLiteral.accept(ScalaVisitor v, ScalaWriter w){
 		v.visit(this,w);
 	}
-	
+
+	public void FloatLiteral.accept(ScalaVisitor v, ScalaWriter w){
+    		v.visit(this,w);
+    	}
+
+
 	public void ListLiteral.accept(ScalaVisitor v, ScalaWriter w){
 		v.visit(this,w);
 	}
@@ -361,7 +372,7 @@ aspect GenerateScala {
 	}
 	
 	
-	public void IncompleteAsyncAccess.accept(ScalaVisitor v, ScalaWriter w){
+/*	public void IncompleteAsyncAccess.accept(ScalaVisitor v, ScalaWriter w){
 		v.visit(this,w);
 	}
 	
@@ -372,6 +383,7 @@ aspect GenerateScala {
 	public void IncompleteSyncAccess.accept(ScalaVisitor v, ScalaWriter w){
 		v.visit(this,w);
 	}
+	*/
 	/*EXPRESSIONS WITH SIDE-EFFECTS*/
 	
 	public abstract void EffExp.accept(ScalaVisitor v, ScalaWriter w);
@@ -397,11 +409,11 @@ aspect GenerateScala {
 	public void GetExp.accept(ScalaVisitor v, ScalaWriter w){
 		v.visit(this,w);
 	}
-	
+/*
 	public void NewLocExp.accept(ScalaVisitor v, ScalaWriter w){
 		v.visit(this,w);
 	}
-	
+*/
 	public void OriginalCall.accept(ScalaVisitor v, ScalaWriter w){
 		v.visit(this,w);
 	}
@@ -451,8 +463,8 @@ aspect GenerateScala {
 		v.visit(this,w);
 	}
 	
-	public void ObjectGuard.accept(ScalaVisitor v, ScalaWriter w){
+/*	public void ObjectGuard.accept(ScalaVisitor v, ScalaWriter w){
 		v.visit(this,w);
 	}
-
+*/
 }

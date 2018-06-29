@@ -2,10 +2,8 @@ package abs.backend.scala;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
 import java.util.function.Function;
 
-import abs.api.cwi.ABSFuture;
 
 /**
  * Some ABS types have an equivalent proper Java type. This is function to be
@@ -14,14 +12,16 @@ import abs.api.cwi.ABSFuture;
 public class ScalaTypeTranslator implements Function<String, String> {
 
     private final Map<String, String> absTypes = new HashMap<>();
-    private final Map<String, String> abstractTypes = new HashMap<>();
+    public final Map<String, String> abstractTypes = new HashMap<>();
     private final Map<String, String> functionalTypes = new HashMap<>();
     private final Map<String, String> staticTypes = new HashMap<>();
     private final Map<String, String> remoteNames = new HashMap<>();
     private final String[] keywords = new String[] { "abstract", "case", "catch", "class", "def", "do", "else",
-            "extends", "false", "final", "finally", "for", "forSome", "if", "implicit", "import", "lazy", "match",
+            "extends", "false", "final", "finally", "for", "forSome", "if", "implicit", "import", "lazy","length", "match",
             "new", "Null", "object", " override", "package", " private", "protected", "return", "sealed", "super",
-            "this", "throw", "trait", "Try", "true", "type", "val", "Var", "while", "with", "yield", "wait" };
+            "this", "throw", "trait", "Try", "true", "type", "val", "Var", "while", "with", "yield", "wait", "Rat", "Bool", "Int", "Fut", "True", "False", "Unit", "Float",
+            "String", "Exception", "numerator", "denominator", "truncate", "random", "substr", "log","exp","sqrt", "float", "rat", "floor", "ceil", "strlen", "toString",
+            "print", "println", "readln", "currentms", "watch", "watchEx", "lowlevelDeadline" };
     private final Map<String, String> kwNames = new HashMap<>();
     
     public ScalaTypeTranslator() {
@@ -81,16 +81,15 @@ public class ScalaTypeTranslator implements Function<String, String> {
     }
 
     protected void fillABSTypes(final Map<String, String> types) {
-        types.put("Rat", "Double");
-        types.put("ABS.StdLib.Rat", "Double");
-        
+        types.put("Rat", "Rational");
+        types.put("ABS.StdLib.Rat", "Rational");
+        types.put("ABS.StdLib.String", "String");
         types.put("Bool", "Boolean");
         types.put("ABS.StdLib.Bool", "Boolean");
         types.put("ABS.StdLib.Int", "Int");
-        
+        types.put("ABS.StdLib.Fut", ScalaVisitor.ABSFUTURE_CLASS);
         types.put("Fut", ScalaVisitor.ABSFUTURE_CLASS);
         types.put("Unit", "Void");
-            
         types.put("ABS.StdLib.Unit", "Void");
     }
 

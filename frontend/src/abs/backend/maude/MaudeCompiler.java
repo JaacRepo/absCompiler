@@ -15,6 +15,7 @@ import java.util.List;
 
 import com.google.common.io.ByteStreams;
 
+import abs.backend.common.InternalBackendException;
 import abs.common.NotImplementedYetException;
 import abs.frontend.ast.Model;
 import abs.frontend.parser.Main;
@@ -44,29 +45,33 @@ public class MaudeCompiler extends Main {
     private int defaultResources = 0;
 
     public static void main(final String... args) {
+        doMain(args);
+    }
+
+
+    public static int doMain(final String... args) {
         /* Maude has build-in AwaitAsyncCall support */
         Model.doAACrewrite = false;
         MaudeCompiler compiler = new MaudeCompiler();
         try {
-            compiler.compile(args);
+            return compiler.compile(args);
         } catch (NotImplementedYetException e) {
             System.err.println(e.getMessage());
-            System.exit(0);
+            return 1;
         } catch (Exception e) {
             System.err.println("An error occurred during compilation:\n" + e.getMessage());
 
             if (compiler.debug) {
                 e.printStackTrace();
             }
-
-            System.exit(1);
+            return 1;
         }
     }
 
     @Override
-    public List<String> parseArgs(String[] args) {
+    public List<String> parseArgs(String[] args) throws InternalBackendException {
         List<String> restArgs = super.parseArgs(args);
-        List<String> remainingArgs = new ArrayList<String>();
+        List<String> remainingArgs = new ArrayList<>();
 
         for (int i = 0; i < restArgs.size(); i++) {
             String arg = restArgs.get(i);
@@ -75,8 +80,7 @@ public class MaudeCompiler extends Main {
             } else if (arg.equals("-o")) {
                 i++;
                 if (i == restArgs.size()) {
-                    System.err.println("Please provide an output file");
-                    System.exit(1);
+                    throw new InternalBackendException("Missing output file name after '-o'");
                 } else {
                     outputfile = new File(restArgs.get(i));
                 }
@@ -103,27 +107,32 @@ public class MaudeCompiler extends Main {
      * @param args
      * @throws Exception
      */
-    public void compile(String[] args) throws Exception {
-        if (verbose) System.out.println("Generating Erlang code...");
+    public int compile(String[] args) throws Exception {
+        if (verbose) System.out.println("Generating Maude code...");
         final Model model = parse(args);
         if (model.hasParserErrors()
             || model.hasErrors()
             || model.hasTypeErrors())
-            printParserErrorAndExit();
+        {
+            printErrorMessage();
+            return 1;
+        }
 
         PrintStream stream = System.out;
         if (outputfile != null) {
             stream = new PrintStream(outputfile);
         }
         InputStream is = ClassLoader.getSystemResourceAsStream(RUNTIME_INTERPRETER_PATH);
-        if (is == null)
-            throw new RuntimeException("Could not locate abs-interpreter.maude");
+        if (is == null) {
+            throw new InternalBackendException("Could not locate abs-interpreter.maude");
+        }
         DateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
 
         stream.println("*** Generated " + dateFormat.format(new Date()));
         ByteStreams.copy(is, stream);
         model.generateMaude(stream, module, mainBlock, clocklimit, defaultResources);
         if (verbose) System.out.println("Finished.  Start `maude " + outputfile.toString() + "' to run the model.");
+        return 0;
     }
 
     public static void printUsage() {

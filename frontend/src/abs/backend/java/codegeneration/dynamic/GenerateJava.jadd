@@ -333,6 +333,12 @@ aspect GenerateJavaDynamic_Core {
         stream.println("}");
     }
 
+    public void PartialFunctionDecl.generateJavaCodeDynamic(JavaCode.Package pkg) {}
+
+    public void PartialFunctionDecl.generateJavaDynamic(PrintStream stream) {}
+
+    public void ParFnApp.generateJavaDynamic(PrintStream stream) {}
+
     public void FunctionDef.generateJavaDynamic(PrintStream stream) { }
 
     public void ExpFunctionDef.generateJavaDynamic(PrintStream stream) {
@@ -560,10 +566,6 @@ aspect GenerateJavaDynamic_Core {
      */
 
     public abstract void Exp.generateJavaDynamic(PrintStream stream);
-
-    public void IncompleteExp.generateJavaDynamic(PrintStream s) {
-        // never called for type correct programs
-    }
 
     public void AsyncCall.generateJavaDynamic(PrintStream stream) {
         DynamicJavaGeneratorHelper.generateAsyncCall(stream, this);
@@ -889,6 +891,10 @@ aspect GenerateJavaDynamic_Core {
         stream.print(".fromString(\"");
         stream.print(getContent());
         stream.print("\")");
+    }
+
+    public void FloatLiteral.generateJavaDynamic(PrintStream stream) {
+        stream.print(getContent() + "d");
     }
 
     public void StringLiteral.generateJavaDynamic(PrintStream stream) {

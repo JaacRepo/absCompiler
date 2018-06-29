@@ -5,11 +5,7 @@
 package abs.backend.scala;
 
 import java.io.BufferedWriter;
-import java.io.File;
 import java.io.IOException;
-import java.io.PrintStream;
-import java.io.StringWriter;
-import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -17,8 +13,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 
-import abs.backend.prettyprint.PrettyPrinterBackEnd;
-import abs.backend.scala.PathResolver;
+import abs.backend.common.InternalBackendException;
 import abs.common.NotImplementedYetException;
 import abs.frontend.ast.Model;
 import abs.frontend.ast.ModuleDecl;
@@ -32,6 +27,7 @@ public class ScalaBackend extends Main {
     public static final String DEFAULT_OUTPUT_DIRECTORY_NAME = "generated-sources/jabsc";
 
     private static String FILE_EXTENSION = "scala";
+    public static int minVersion = 12;
 
     public String outputDirectory;
     public String source;
@@ -60,7 +56,7 @@ public class ScalaBackend extends Main {
     }
 
     @Override
-    public List<String> parseArgs(String[] args) {
+    public List<String> parseArgs(String[] args) throws InternalBackendException {
         List<String> restArgs = super.parseArgs(args);
         List<String> remainingArgs = new ArrayList<String>();
 
@@ -93,20 +89,37 @@ public class ScalaBackend extends Main {
     public void compile(String[] args) throws Exception {
         final Model model = parseFiles(parseArgs(args).toArray(new String[0]));
         System.out.println("obtained model");
-        analyzeModel(model);
+        analyzeFlattenAndRewriteModel(model);
         System.out.println("analyzed model");
         if ((model.hasParserErrors() || model.hasErrors() || model.hasTypeErrors())) {
-            printParserErrorAndExit();
+            printErrorMessage();
         }
 
         final Path outputDirPath = createOutputDirectoryPath(outputDirectory, createPath(source));
         Files.createDirectories(outputDirPath);
 
+        ScalaTypeTranslator typeTranslator = new ScalaTypeTranslator();
+
+        for (ModuleDecl pack : model.getModuleDecls()) {
+            DefaultScalaWriterSupplier supplier = new DefaultScalaWriterSupplier(PathResolver.DEFAULT_PATH_RESOLVER,
+                    pack.getName(), outputDirPath);
+            final ScalaVisitor v = new ScalaVisitor(pack.getName(), model, supplier, typeTranslator,
+                    outputDirPath);
+
+            final Path packagePath = resolveOutputDirectory(pack.getName(), outputDirPath);
+            Files.createDirectories(packagePath);
+            final ScalaWriter progWriter = supplier.apply(pack.getName());
+            System.out.println("Visiting model");
+
+            v.preVisit(pack);
+            System.out.println("Completed model");
+        }
+
         for (ModuleDecl pack : model.getModuleDecls()) {
             if (pack.getName().equals("ABS.StdLib")) {
                 DefaultScalaWriterSupplier supplier = new DefaultScalaWriterSupplier(PathResolver.DEFAULT_PATH_RESOLVER,
                         pack.getName(), outputDirPath);
-                final ScalaVisitor v = new ScalaVisitor(pack.getName(), model, supplier, new ScalaTypeTranslator(),
+                final ScalaVisitor v = new ScalaVisitor(pack.getName(), model, supplier, typeTranslator,
                         outputDirPath);
 
                 final Path packagePath = resolveOutputDirectory(pack.getName(), outputDirPath);
@@ -124,7 +137,7 @@ public class ScalaBackend extends Main {
             if (!(pack.getName().equals("ABS.StdLib"))) {
                 DefaultScalaWriterSupplier supplier = new DefaultScalaWriterSupplier(PathResolver.DEFAULT_PATH_RESOLVER,
                         pack.getName(), outputDirPath);
-                final ScalaVisitor v = new ScalaVisitor(pack.getName(), model, supplier, new ScalaTypeTranslator(),
+                final ScalaVisitor v = new ScalaVisitor(pack.getName(), model, supplier, typeTranslator,
                         outputDirPath);
 
                 final Path packagePath = resolveOutputDirectory(pack.getName(), outputDirPath);
@@ -186,4 +199,7 @@ public class ScalaBackend extends Main {
         }
     }
 
+    public static int getScalaVersion() {
+        return minVersion;
+    }
 }

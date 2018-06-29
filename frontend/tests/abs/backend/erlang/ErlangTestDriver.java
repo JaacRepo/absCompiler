@@ -1,6 +1,6 @@
 /**
 
- * Copyright (c) 2009-2011, The HATS Consortium. All rights reserved. 
+ * Copyright (c) 2009-2011, The HATS Consortium. All rights reserved.
  * This file is licensed under the terms of the Modified BSD License.
  */
 package abs.backend.erlang;
@@ -70,7 +70,7 @@ public class ErlangTestDriver extends ABSTest implements BackendTestDriver {
 
     /**
      * Parses, complies, runs given code and returns value of testresult.
-     * 
+     *
      * @param absCode
      * @return either the Result, or if an execution error occurred null
      */
@@ -109,10 +109,10 @@ public class ErlangTestDriver extends ABSTest implements BackendTestDriver {
     /**
      * Generates Erlang code in target directory, adding a last statement that
      * prints the value of the `testresult' variable.
-     * 
+     *
      * @return a Module Name containing a Main Block
-     * @throws InternalBackendException 
-     * 
+     * @throws InternalBackendException
+     *
      */
     private String genCode(Model model, File targetDir, boolean appendResultprinter) throws IOException, InterruptedException, InternalBackendException {
         if (model.hasErrors()) {
@@ -125,12 +125,13 @@ public class ErlangTestDriver extends ABSTest implements BackendTestDriver {
         if (mb != null && appendResultprinter) {
             // We search for this output in the `run' method below
             mb.addStmt(new ExpressionStmt(
-                new List<Annotation>(),
+                new List<>(),
                 new FnApp("ABS.StdLib.println",
-                          new List<PureExp>(new AddAddExp(new StringLiteral("RES="),
-                                                          new FnApp("ABS.StdLib.toString", new List<PureExp>(new VarUse("testresult"))))))));
+                    new List<>(new AddAddExp(new StringLiteral("RES="),
+                        new FnApp("ABS.StdLib.toString",
+                            new List<>(new VarUse("testresult"))))))));
         }
-        ErlangBackend.compile(model, targetDir,
+        new ErlangBackend().compile(model, targetDir,
 // use the following argument for silent compiler:
                               EnumSet.noneOf(ErlangBackend.CompileOptions.class)
 // use the following argument for verbose compiler output:
@@ -147,7 +148,7 @@ public class ErlangTestDriver extends ABSTest implements BackendTestDriver {
      * Executes mainModule
      *
      * To detect faults, we have a Timeout process which will kill the
-     * runtime system after 2 seconds
+     * runtime system after 10 seconds
      */
     private String run(File workDir, String mainModule) throws Exception {
         String val = null;
@@ -156,7 +157,7 @@ public class ErlangTestDriver extends ABSTest implements BackendTestDriver {
         pb.directory(workDir);
         pb.redirectErrorStream(true);
         Process p = pb.start();
-       
+
         Thread t = new Thread(new TimeoutThread(p));
         t.start();
         // Search for result
@@ -190,8 +191,22 @@ public class ErlangTestDriver extends ABSTest implements BackendTestDriver {
             } catch (IOException e) {
                 // Ignore Ex, File should be deleted anyway
             }
-        }        
+        }
     }
+
+    @Override
+    public BackendName getBackendName() {
+        return BackendName.ERLANG;
+    }
+
+    @Override
+    public boolean supportsCustomSchedulers() { return true; }
+
+    @Override
+    public boolean supportsTimedAbs() { return true; }
+
+    @Override
+    public boolean supportsExceptions() { return true; }
 }
 
 class TimeoutThread implements Runnable {
@@ -206,7 +221,7 @@ class TimeoutThread implements Runnable {
     @Override
     public void run() {
         try {
-            Thread.sleep(2000);
+            Thread.sleep(10000);
             p.destroy();
         } catch (InterruptedException e) {
         }

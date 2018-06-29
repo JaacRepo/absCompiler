@@ -13,6 +13,8 @@ import abs.common.CompilerUtils;
 import abs.backend.common.CodeStream;
 import abs.backend.erlang.ErlUtil.Mask;
 import abs.frontend.ast.*;
+import abs.frontend.typechecker.DataTypeType;
+import abs.frontend.typechecker.Type;
 
 import com.google.common.collect.Iterables;
 
@@ -22,9 +24,9 @@ import org.apache.commons.io.output.WriterOutputStream;
 
 /**
  * Generates the Erlang module for one class
- * 
+ *
  * @author Georg Göri
- * 
+ *
  */
 public class ClassGenerator {
     private final CodeStream ecs;
@@ -80,7 +82,7 @@ public class ClassGenerator {
             ecs.println("_:Exception ->");
             if (classDecl.hasRecoverBranch()) {
                 ecs.incIndent();
-                ecs.println("Recovered = try 'recover'(O, Exception) catch _:RecoverError -> io:format(standard_error, \"Recovery block for ~s in class " + classDecl.qualifiedName() + " failed with exception ~s~n\", [builtin:toString(Cog, Exception), builtin:toString(Cog, RecoverError)]), false end,");
+                ecs.println("Recovered = try 'recover'(O, Exception) catch _:RecoverError -> io:format(standard_error, \"Recovery block for ~s in class " + classDecl.getQualifiedName() + " failed with exception ~s~n\", [builtin:toString(Cog, Exception), builtin:toString(Cog, RecoverError)]), false end,");
                 ecs.println("case Recovered of");
                 ecs.incIndent().println("true -> exit(Exception);");
                 ecs.println("false ->");
@@ -123,7 +125,7 @@ public class ClassGenerator {
         }
         if (classDecl.isActiveClass()) {
             ecs.println("cog:process_is_blocked_for_gc(Cog, self()),");
-            ecs.print("cog:add_sync(Cog,active_object_task,O,#process_info{method= <<\"run\"/utf8>>},");
+            ecs.print("cog:add_sync(Cog,active_object_task,none,O,[],#process_info{method= <<\"run\"/utf8>>},");
             ecs.print(vars.toStack());
             ecs.println("),");
             ecs.println("cog:process_is_runnable(Cog,self()),");
@@ -140,8 +142,8 @@ public class ClassGenerator {
             Vars vars = new Vars();
             Vars safe = vars.pass();
             // Build var scopes and statmemnts for each branch
-            java.util.List<Vars> branches_vars = new java.util.LinkedList<Vars>();
-            java.util.List<String> branches = new java.util.LinkedList<String>();
+            java.util.List<Vars> branches_vars = new java.util.LinkedList<>();
+            java.util.List<String> branches = new java.util.LinkedList<>();
             for (CaseBranchStmt b : classDecl.getRecoverBranchs()) {
                 Vars v = vars.pass();
                 StringWriter sw = new StringWriter();
@@ -160,6 +162,7 @@ public class ClassGenerator {
                 vars.updateTemp(v);
             }
             ErlUtil.functionHeader(ecs, "recover", ErlUtil.Mask.none, generatorClassMatcher(), "Exception");
+            ecs.println("Stack = [],");
             ecs.println("Result=case Exception of ");
             ecs.incIndent();
             // Now print statments and mergelines for each branch.
@@ -186,13 +189,15 @@ public class ClassGenerator {
     }
 
     private void generateDataAccess() {
+        // FIXME: we should eliminate 'set', 'get' and directly use
+        // object:set_field_value / object:get_field_value instead
         ErlUtil.functionHeader(ecs, "set", Mask.none,
                 String.format("O=#object{class=%s=C,ref=Ref,cog=Cog}", modName), "Var", "Val");
-        ecs.println("gen_fsm:send_event(Ref,{O,set,Var,Val}).");
+        ecs.println("object:set_field_value(O, Var, Val).");
         ecs.decIndent();
         ecs.println();
         ErlUtil.functionHeader(ecs, "get", Mask.none, generatorClassMatcher(), "Var");
-        ecs.println("gen_fsm:sync_send_event(Ref,{O,get,Var}).");
+        ecs.println("object:get_field_value(O,Var).");
         ecs.decIndent();
         ecs.println();
         ecs.print("-record(state,{");
@@ -242,27 +247,44 @@ public class ClassGenerator {
             ecs.println("throw(badarg).");
             ecs.decIndent();
         }
-        ErlUtil.functionHeader(ecs, "get_all_state", Mask.none, "S");
+        ErlUtil.functionHeader(ecs, "get_state_for_modelapi", Mask.none, "S");
         ecs.println("[");
         ecs.incIndent();
         first = true;
         for (TypedVarOrFieldDecl f : Iterables.concat(classDecl.getParams(), classDecl.getFields())) {
             if (!first) ecs.print(", ");
             first = false;
-            ecs.pf("{ '%s', S#state.%s }",
+            ecs.pf("{ '%s', S#state.'%s' }",
                    f.getName(), f.getName());
         }
         ecs.decIndent();
         ecs.println("].");
     }
 
+    private void generateParameterDescription(Type paramtype) {
+        ecs.print("<<\"" + paramtype.getQualifiedName() + "\">>,");
+        ecs.print(" {");
+        if (paramtype.isDataType()) {
+            DataTypeType paramdatatype = (DataTypeType)paramtype;
+            if (paramdatatype.hasTypeArgs()) {
+                String interp = "";
+                for (Type typearg : paramdatatype.getTypeArgs()) {
+                    ecs.print(interp);
+                    interp = ", ";
+                    generateParameterDescription(typearg);
+                }
+            }
+        }
+        ecs.print(" }");
+    }
+
     private void generateExports() {
-        ecs.println("-export([get_val_internal/2,set_val_internal/3,init_internal/0,get_all_state/1]).");
+        ecs.println("-export([get_val_internal/2,set_val_internal/3,init_internal/0,get_state_for_modelapi/1]).");
         ecs.println("-compile(export_all).");
         ecs.println();
 
-        HashSet<MethodSig> callable_sigs = new HashSet<MethodSig>();
-        HashSet<InterfaceDecl> visited = new HashSet<InterfaceDecl>();
+        HashSet<MethodSig> callable_sigs = new HashSet<>();
+        HashSet<InterfaceDecl> visited = new HashSet<>();
         for (InterfaceTypeUse i : classDecl.getImplementedInterfaceUseList()) {
             visited.add((InterfaceDecl)i.getDecl());
         }
@@ -290,17 +312,19 @@ public class ClassGenerator {
                 ecs.print("<<\"" + ms.getName() + "\">> => { ");
                 ecs.print("'m_" + ms.getName() + "'");
                 ecs.print(", ");
-                ecs.print("<<\"" + ms.getReturnType().getType().getQualifiedName() + "\">>");
+                ecs.print("<<\"" + ms.getReturnType().getType().toString() + "\">>");
                 ecs.print(", ");
                 ecs.print("[ ");
                 boolean innerfirst = true;
                 for (ParamDecl p : ms.getParamList()) {
+                    // For each parameter, we need name, human-readable type,
+                    // ABS type, and ABS type arguments (if present)
                     if (!innerfirst) ecs.print(", ");
                     innerfirst = false;
                     ecs.print("{ ");
-                    ecs.print("<<\"" + p.getName() + "\">>");
-                    ecs.print(", ");
-                    ecs.print("<<\"" + p.getAccess().getType().getQualifiedName() + "\">>");
+                    ecs.print("<<\"" + p.getName() + "\">>, ");
+                    ecs.print("<<\"" + p.getType().toString() + "\">>, ");
+                    generateParameterDescription(p.getType());
                     ecs.print(" }");
                 }
                 ecs.print("] ");

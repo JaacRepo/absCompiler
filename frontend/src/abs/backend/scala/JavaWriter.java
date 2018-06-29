@@ -4,7 +4,6 @@ import static javax.lang.model.element.Modifier.ABSTRACT;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.io.StringWriter;
 import java.io.Writer;
 import java.lang.annotation.Annotation;
 import java.util.ArrayDeque;
@@ -329,7 +328,7 @@ public class JavaWriter implements Closeable {
 	 *            the class to extend, or null for no extends clause.
 	 */
 	public JavaWriter beginType(String type, String kind, Set<Modifier> modifiers, String extendsType,
-			String... implementsTypes) throws IOException {
+                                String... implementsTypes) throws IOException {
 		indent();
 		emitModifiers(modifiers);
 		out.write(kind);
@@ -447,7 +446,7 @@ public class JavaWriter implements Closeable {
 	 *            the classes to throw, or null for no throws clause.
 	 */
 	public JavaWriter beginMethod(String returnType, String name, Set<Modifier> modifiers, List<String> parameters,
-			List<String> throwsTypes) throws IOException {
+                                  List<String> throwsTypes) throws IOException {
 		indent();
 		emitModifiers(modifiers);
 		if (returnType != null) {
@@ -659,7 +658,7 @@ public class JavaWriter implements Closeable {
 			out.write("(");
 			scopes.push(Scope.ANNOTATION_ATTRIBUTE);
 			String separator = split ? "\n" : "";
-			for (Map.Entry<String, ?> entry : attributes.entrySet()) {
+			for (Entry<String, ?> entry : attributes.entrySet()) {
 				out.write(separator);
 				separator = split ? ",\n" : ", ";
 				if (split) {

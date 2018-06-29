@@ -10,8 +10,12 @@ import java.util.HashMap;
 import java.util.LinkedList;
 
 /**
- * Preprocesses the AST directly after it has been parsed, before any name and type analysis.
- * Typically, syntactic sugar is eliminated in this phase
+ * Preprocesses the AST directly after it has been parsed, before any name and
+ * type analysis.  Typically, syntactic sugar is eliminated in this phase.
+ *
+ * Note that we might not have a full model yet - consider using NoTransform()
+ * for accessors.
+ *
  * Currently the following things are done:
  *
  *  - selector names of constructors are transformed to functions
@@ -46,7 +50,7 @@ public class ASTPreProcessor {
     }
 
     private List<Pattern> makePatternList(int constructorArgs, int numArg) {
-        List<Pattern> patternList = new List<Pattern>();
+        List<Pattern> patternList = new List<>();
         for (int i = 0; i < constructorArgs; i++) {
             if (i == numArg)
                 patternList.add(new PatternVar(new PatternVarDecl("res")));
@@ -57,7 +61,7 @@ public class ASTPreProcessor {
     }
 
     private FunctionDef makeAccessorFunction(LinkedList<DataDeclarationArg> args) {
-        List<CaseBranch> branches = new List<CaseBranch>();
+        List<CaseBranch> branches = new List<>();
 
         for (DataDeclarationArg d : args) {
             String constructorName = d.getConstructor().getName();
@@ -74,7 +78,7 @@ public class ASTPreProcessor {
      * the position of the argument.
      */
     private Map<String, LinkedList<DataDeclarationArg>> makeConstructorMap(DataTypeDecl dtd) {
-        Map<String, LinkedList<DataDeclarationArg>> constructors = new HashMap<String, LinkedList<DataDeclarationArg>>();
+        Map<String, LinkedList<DataDeclarationArg>> constructors = new HashMap<>();
 
         for (DataConstructor c : dtd.getDataConstructors()) {
             int argpos = 0;
@@ -83,7 +87,7 @@ public class ASTPreProcessor {
                     String name = ca.getSelectorName().getName();
                     LinkedList<DataDeclarationArg> tmp = constructors.get(name);
                     if (tmp == null) {
-                        tmp = new LinkedList<DataDeclarationArg>();
+                        tmp = new LinkedList<>();
                         constructors.put(name, tmp);
                     }
                     tmp.add(new DataDeclarationArg(c, ca, argpos));
@@ -121,7 +125,7 @@ public class ASTPreProcessor {
         // data constructors a name corresponds to.
         Map<String, LinkedList<DataDeclarationArg>> constructors = makeConstructorMap(dtd);
 
-        LinkedList<FunctionDecl> fds = new LinkedList<FunctionDecl>();
+        LinkedList<FunctionDecl> fds = new LinkedList<>();
 
         // Make an accessor function for every argument name in the declaration
         for (String name : constructors.keySet()) {
@@ -137,18 +141,20 @@ public class ASTPreProcessor {
             if (dtd instanceof ParametricDataTypeDecl) {
                 ParametricDataTypeDecl pdtd = (ParametricDataTypeDecl) dtd;
                 typeParams = delta ? pdtd.getTypeParameterList().treeCopyNoTransform() : pdtd.getTypeParameterList();
-                List<TypeUse> typeParams2 = new List<TypeUse>();
+                List<TypeUse> typeParams2 = new List<>();
                 for (TypeParameterDecl p : typeParams) {
-                    typeParams2.add(p.getType().toUse());
+                    // was p.getType().toUse() but we're not type-checked yet
+                    typeParams2.add(new TypeParameterUse(p.getName(), new List<>()));
                 }
-                paramType = new ParametricDataTypeUse(pdtd.getName(), new List<Annotation>(), typeParams2);
+                paramType = new ParametricDataTypeUse(pdtd.getName(), new List<>(), typeParams2);
             } else {
-                typeParams = new List<TypeParameterDecl>();
-                paramType = dtd.getType().toUse();
+                typeParams = new List<>();
+                // was dtd.getType().toUse() but we're not type-checked yet
+                paramType = new DataTypeUse(dtd.getName(), new List<>());
             }
 
             List<ParamDecl> parameters = new List<ParamDecl>()
-                .add(new ParamDecl("data",paramType,new List<Annotation>()));
+                .add(new ParamDecl("data",paramType, new List<>()));
 
             // Get an arbitrary constructor argument, which is used to decide
             // the return type of the function (if there are mismatching types,
@@ -162,7 +168,7 @@ public class ASTPreProcessor {
                                            (TypeUse)ca.getTypeUse().copy(), // type
                                            parameters, // parameters
                                            funDef,
-                                           new List<Annotation>(), // annotations
+                    new List<>(), // annotations
                                            typeParams
                                            );
 

@@ -79,7 +79,7 @@ public class MethodDefinition {
 
 	@Override
 	public String toString() {
-		return clazz + ": " + type + " " + name + "(" + String.join(",", this.paramTypes) + ")" + containsAwait;
+		return ":" + containsAwait;
 	}
 
 }

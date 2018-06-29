@@ -1,5 +1,5 @@
-/** 
- * Copyright (c) 2009-2011, The HATS Consortium. All rights reserved. 
+/**
+ * Copyright (c) 2009-2011, The HATS Consortium. All rights reserved.
  * This file is licensed under the terms of the Modified BSD License.
  */
 package abs.frontend.typechecker.locationtypes.infer;
@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.util.*;
 import java.util.Map.Entry;
 
+import abs.backend.common.InternalBackendException;
 import abs.common.FileUtils;
 import abs.common.NotImplementedYetException;
 import abs.common.WrongProgramArgumentException;
@@ -25,7 +26,7 @@ import abs.frontend.parser.Main;
 import abs.frontend.typechecker.locationtypes.LocationType;
 
 public class InferMain extends Main {
-    
+
     public enum Config {
         INTERFACES,
         CLASSES,
@@ -33,19 +34,20 @@ public class InferMain extends Main {
         FIELDS,
         FUNCTIONS
     }
-    
+
     EnumSet<Config> config = EnumSet.of(Config.INTERFACES, Config.CLASSES);
-    
+
     public static void main(final String... args) {
         InferMain m = new InferMain();
         try {
             m.compile(args);
         } catch (WrongProgramArgumentException pe) {
             System.err.println(pe.getMessage());
-            m.printUsageAndExit();
+            m.printUsage();
+            System.exit(1);
         } catch (NotImplementedYetException e) {
             System.err.println(e.getMessage());
-            System.exit(0);
+            System.exit(1);
         } catch (Exception e) {
             System.err.println("An error occurred during compilation:\n" + e.getMessage());
             e.printStackTrace();
@@ -57,9 +59,9 @@ public class InferMain extends Main {
     private File destDir = new File(".");
 
     @Override
-    public List<String> parseArgs(String[] args) {
+    public List<String> parseArgs(String[] args) throws InternalBackendException {
         List<String> restArgs = super.parseArgs(args);
-        List<String> remainingArgs = new ArrayList<String>();
+        List<String> remainingArgs = new ArrayList<>();
 
         for (int i = 0; i < restArgs.size(); i++) {
             String arg = restArgs.get(i);
@@ -113,7 +115,7 @@ public class InferMain extends Main {
         Main.printUsage();
         System.out.println("Location Type Inferrer:");
         System.out.println("  -d <dir>     generate files to <dir>");
-        System.out.println("  -locinferwritebackscope=<scope>,<scope>,... "); 
+        System.out.println("  -locinferwritebackscope=<scope>,<scope>,... ");
         System.out.println("		   only write back location type inference results");
         System.out.println("               to given scopes. Where <scope> can be one of ");
         System.out.println("               interfaces, classes, fields, functions, and all \n");
@@ -140,14 +142,14 @@ public class InferMain extends Main {
         writeInferenceResultsBack(ltie.getResults());
 
     }
-    
+
     public void setConfig(Config... configs) {
         this.config = EnumSet.copyOf(Arrays.asList(configs));
     }
-    
+
     public void writeInferenceResultsBack(Map<LocationTypeVariable, LocationType> results) throws IOException {
         Map<CompilationUnit, List<LocationTypeVariable>> m = clusterByCompilationUnit(results);
-        
+
         for (Entry<CompilationUnit, List<LocationTypeVariable>> e : m.entrySet()) {
             CompilationUnit cu = e.getKey();
             List<LocationTypeVariable> l = getSortedList(e);
@@ -188,7 +190,7 @@ public class InferMain extends Main {
 
     private Map<CompilationUnit, List<LocationTypeVariable>> clusterByCompilationUnit(
             Map<LocationTypeVariable, LocationType> results) {
-        Map<CompilationUnit, List<LocationTypeVariable>> m = new HashMap<CompilationUnit, List<LocationTypeVariable>>();
+        Map<CompilationUnit, List<LocationTypeVariable>> m = new HashMap<>();
         for (LocationTypeVariable ltv : results.keySet()) {
             ASTNode<?> node = ltv.getNode();
             if (node == null) continue;
@@ -196,7 +198,7 @@ public class InferMain extends Main {
             if (node.getModuleDecl().getName().startsWith("ABS.")) continue;
             List<LocationTypeVariable> list = m.get(cu);
             if (list == null) {
-                list = new ArrayList<LocationTypeVariable>();
+                list = new ArrayList<>();
                 m.put(cu, list);
             }
             list.add(ltv);
@@ -207,7 +209,7 @@ public class InferMain extends Main {
     private boolean shouldBeConsidered(LocationTypeVariable ltv) {
         ASTNode<?> node = ltv.getNode();
         Decl contextDecl = node.getContextDecl();
-        
+
         if (contextDecl != null) {
             // Don't print interface annotations in "implements/extends" clauses:
             if (node instanceof InterfaceTypeUse && (contextDecl instanceof ClassDecl || contextDecl instanceof InterfaceDecl))
@@ -215,24 +217,24 @@ public class InferMain extends Main {
 
             if (contextDecl.isClass() && !config.contains(Config.CLASSES))
                 return false;
-        
+
             if (contextDecl.isInterface() && !config.contains(Config.INTERFACES))
                 return false;
 
             if (contextDecl.isFunction() && !config.contains(Config.FUNCTIONS))
                 return false;
         }
-        
-        if (node instanceof VarDecl && !config.contains(Config.LOCAL_VAR_DECLS)) 
+
+        if (node instanceof VarDecl && !config.contains(Config.LOCAL_VAR_DECLS))
             return false;
-        
-        if (node instanceof FieldDecl && !config.contains(Config.FIELDS)) 
+
+        if (node instanceof FieldDecl && !config.contains(Config.FIELDS))
             return false;
-        
+
         if (ltv.getAnnotatedType() != null) {
             return false;
         }
-        
+
         return true;
     }
 

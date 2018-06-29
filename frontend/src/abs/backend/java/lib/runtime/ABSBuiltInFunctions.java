@@ -21,6 +21,7 @@ import abs.backend.java.lib.types.ABSDataType;
 import abs.backend.java.lib.types.ABSInteger;
 import abs.backend.java.lib.types.ABSProcess;
 import abs.backend.java.lib.types.ABSRational;
+import abs.backend.java.lib.types.ABSFloat;
 import abs.backend.java.lib.types.ABSString;
 import abs.backend.java.lib.types.ABSUnit;
 import abs.backend.java.lib.types.ABSValue;
@@ -98,7 +99,7 @@ public class ABSBuiltInFunctions {
         }
     }
 
-    public static ABSDataType procDeadline(ABSProcess p) {
+    public static ABSDataType proc_deadline(ABSProcess p) {
         if (p.getDeadline() == -1) {
             Class<?> type = DynamicClassUtils.getClass("ABS.StdLib.Duration_InfDuration");
             return DynamicClassUtils.instance(type);
@@ -215,4 +216,31 @@ public class ABSBuiltInFunctions {
         return r.denominator();
     }
 
+    public static ABSFloat float__(ABSRational r) {
+        return r.toFloat();
+    }
+
+    public static ABSRational rat(ABSFloat f) {
+        return ABSRational.fromDouble(f.getDouble());
+    }
+
+    public static ABSInteger floor(ABSFloat f) {
+        return ABSInteger.floor(f);
+    }
+
+    public static ABSInteger ceil(ABSFloat f) {
+        return ABSInteger.ceil(f);
+    }
+
+    public static ABSFloat sqrt(ABSFloat f) {
+        return ABSFloat.fromDouble(StrictMath.sqrt(f.getDouble()));
+    }
+
+    public static ABSFloat log(ABSFloat f) {
+        return ABSFloat.fromDouble(StrictMath.log(f.getDouble()));
+    }
+
+    public static ABSFloat exp(ABSFloat f) {
+        return ABSFloat.fromDouble(StrictMath.exp(f.getDouble()));
+    }
 }

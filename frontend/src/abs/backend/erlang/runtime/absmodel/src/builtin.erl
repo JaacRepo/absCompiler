@@ -5,21 +5,23 @@
 -include_lib("abs_types.hrl").
 -export([currentms/1,getProductLine/1,lowlevelDeadline/1,print/2,println/2,strlen/2,substr/4,thisDC/1,toString/2]).
 -export([random/2,truncate/2,numerator/2, denominator/2]).
+-export([float/2, rat/2, floor/2, ceil/2, sqrt/2, log/2, exp/2]).
 
--export([method/2, arrival/2]).
-
-
-%% Copied from Erlang R19 lists:join
-%% TODO: when we switch to R19, use lists:join
-join(_Sep, []) -> [];
-join(Sep, [H|T]) -> [H|join_prepend(Sep, T)].
-
-join_prepend(_Sep, []) -> [];
-join_prepend(Sep, [H|T]) -> [Sep,H|join_prepend(Sep,T)].
+-export([method/2, arrival/2, proc_deadline/2]).
 
 
 lowlevelDeadline(_Cog) ->
-    -1.
+    ProcessInfo = get(process_info),
+    case ProcessInfo#process_info.proc_deadline of
+        dataInfDuration -> -1;
+        {dataDuration, Amount} ->
+            Now=clock:now(),
+            {dataTime, CreateTime} = ProcessInfo#process_info.creation,
+            %% negative result means infinite deadline so we clamp with 0 -
+            %% this is arguably wrong but was demanded by the Java backend :(
+            Deadline=rationals:max(rationals:sub(Amount, rationals:sub(Now, CreateTime)), 0)
+    end.
+
 currentms(_Cog)->
     %% %% FIXME: There should be a compile-time option whether to use
     %% %% simulated or wall-clock time
@@ -69,6 +71,8 @@ abslistish_to_iolist(Cog, Cons, _Emp, {Cons, H, T}) ->
 
 toString(_Cog, true) -> <<"True"/utf8>>;
 toString(_Cog, false) -> <<"False"/utf8>>;
+toString(_Cog,I) when is_float(I) ->
+    list_to_binary(mochinum:digits(I));
 toString(_Cog,I) when is_integer(I) ->
     integer_to_binary(I);
 toString(_Cog,{N,D}) when is_integer(N),is_integer(D)->
@@ -96,7 +100,7 @@ toString(_Cog,#object{class=Cid,ref=Oid}) ->
                       ":", pid_to_list(Oid)]);
 toString(_Cog, L) when is_list(L) ->
     iolist_to_binary(["list[",
-                      join(", ", lists:map(fun(I) -> toString(_Cog, I) end, L)),
+                      lists:join(", ", lists:map(fun(I) -> toString(_Cog, I) end, L)),
                       "]"]);
 toString(_Cog, T) when is_tuple(T) ->
     [C|A] = tuple_to_list(T),
@@ -106,7 +110,7 @@ toString(_Cog, T) when is_tuple(T) ->
         dataInsertAssoc ->
             iolist_to_binary(["map[", abslistish_to_iolist(_Cog, dataInsertAssoc, dataEmptyMap, T), "]"]);
         _ -> iolist_to_binary([constructorname_to_string(C),
-                               "(", join(",", [toString(_Cog,X) || X <- A]),
+                               "(", lists:join(",", [toString(_Cog,X) || X <- A]),
                                ")"])
     end.
 
@@ -126,7 +130,37 @@ denominator(_Cog, {_N, D}) ->
 denominator(_Cog, A) when is_integer(A) ->
     1.
 
+float(_Cog, {N, D}) ->
+    N / D;
+float(_Cog, A) when is_integer(A) ->
+    float(A).
 
+rat(_Cog, F) ->
+    %% this is slightly ugly.
+    Rest = lists:dropwhile(fun(E) -> E /= $. end, mochinum:digits(F)),
+    case Rest of
+        ".0" ->
+            trunc(F);
+        _ ->
+            Length = length(Rest) - 1,
+            Factor = mochinum:int_pow(10, Length),
+            rationals:new(trunc(F * Factor), Factor)
+    end.
+
+floor(_Cog, F) ->
+    erlang:floor(F).
+
+ceil(_Cog, F) ->
+    erlang:ceil(F).
+
+sqrt(_Cog, F) ->
+    math:sqrt(F).
+
+log(_Cog, F) ->
+    math:log(F).
+
+exp(_Cog, F) ->
+    math:exp(F).
 
 println(_Cog,S)->
     io:format("~s~n",[S]).
@@ -145,3 +179,12 @@ method(_Cog, #process_info{method=Method}) ->
     Method.
 arrival(_Cog, #process_info{arrival=Arrival}) ->
     Arrival.
+proc_deadline(_Cog, #process_info{proc_deadline=dataInfDuration}) ->
+    dataInfDuration;
+proc_deadline(_Cog, #process_info{
+                      proc_deadline={ dataDuration, OriginalDeadline},
+                      creation={dataTime, CreationTime}}) ->
+    Time = clock:now(),
+    Elapsed = rationals:sub(Time, CreationTime),
+    NewDeadline = rationals:sub(OriginalDeadline, Elapsed),
+    { dataDuration, NewDeadline }.

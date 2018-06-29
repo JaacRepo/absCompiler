@@ -34,10 +34,10 @@ public class TypeCheckerHelper {
             e.add(new SemanticError(p, ErrorMessage.CONSTRUCTOR_NOT_RESOLVABLE, p.getConstructor()));
             return;
         }
-        String cname = c.qualifiedName();
+        String cname = c.getQualifiedName();
         if (deprecatedConstructors.contains(cname)
             && !(cname.startsWith(p.getModuleDecl().getName()))) {
-            e.add(new SemanticWarning(p, ErrorMessage.DEPRECATED_CONSTRUCTOR, c.qualifiedName()));
+            e.add(new SemanticWarning(p, ErrorMessage.DEPRECATED_CONSTRUCTOR, cname));
         }
 
         if (c.getNumConstructorArg() != p.getNumParam()) {
@@ -45,10 +45,12 @@ public class TypeCheckerHelper {
             return;
         }
 
-        assert t.isDataType() || t.isExceptionType() : t; // TODO: more instances of this? Maybe exception should imply datatype?
+        assert t.isDataType() || t.isExceptionType() : t; // isExceptionType only for clarity, since exceptions are datatypes
 
-        if (!t.getDecl().equals(c.getDataTypeDecl())) {
-            e.add(new TypeError(p, ErrorMessage.WRONG_CONSTRUCTOR, t.toString(), p.getConstructor()));
+        if (!t.isExceptionType()) {
+            if (!t.getDecl().equals(c.getDataTypeDecl())) {
+                e.add(new TypeError(p, ErrorMessage.WRONG_CONSTRUCTOR, t.toString(), p.getConstructor()));
+            }
         }
 
         Type myType = p.getType();
@@ -79,7 +81,7 @@ public class TypeCheckerHelper {
     }
 
     public static void typeCheckParamList(SemanticConditionList l, HasParams params) {
-        Set<String> names = new HashSet<String>();
+        Set<String> names = new HashSet<>();
         for (ParamDecl d : params.getParams()) {
             if (!names.add(d.getName())) {
                 l.add(new TypeError(d, ErrorMessage.DUPLICATE_PARAM_NAME, d.getName()));
@@ -111,7 +113,7 @@ public class TypeCheckerHelper {
     }
 
     public static java.util.List<Type> applyBindings(Map<TypeParameter, Type> binding, java.util.List<Type> types) {
-        ArrayList<Type> res = new ArrayList<Type>(types.size());
+        ArrayList<Type> res = new ArrayList<>(types.size());
         for (Type t : types) {
             res.add(t.applyBinding(binding));
         }
@@ -132,10 +134,13 @@ public class TypeCheckerHelper {
             for (int i = 0; i < params.size(); i++) {
                 Type argType = params.get(i);
                 PureExp exp = args.getChild(i);
+                int nerrors = l.getErrorCount();
                 exp.typeCheck(l);
-                Type expType = exp.getType();
-                if (!expType.isAssignableTo(argType)) {
-                    l.add(new TypeError(n, ErrorMessage.TYPE_MISMATCH, exp.getType(), argType));
+                if (nerrors == l.getErrorCount()) {
+                    Type expType = exp.getType();
+                    if (!expType.isAssignableTo(argType)) {
+                        l.add(new TypeError(n, ErrorMessage.TYPE_MISMATCH, exp.getType(), argType));
+                    }
                 }
             }
         }
@@ -232,7 +237,7 @@ public class TypeCheckerHelper {
         }
 
         // Check the right side of product expression that contains in prodNames
-        Set<String> productNames = new HashSet<String>();
+        Set<String> productNames = new HashSet<>();
         prod.getProductExpr().setRightSideProductNames(productNames);
         for (String productName : productNames) {
             if (!prodNames.contains(productName)) {
@@ -255,7 +260,7 @@ public class TypeCheckerHelper {
             }
         }
 
-        Set<String> seen = new HashSet<String>();
+        Set<String> seen = new HashSet<>();
         // FIXME: deal with reconfigurations
 //        for (Reconfiguration recf : prod.getReconfigurations()) {
 //            if (!seen.add(recf.getTargetProductID()))
@@ -281,7 +286,7 @@ public class TypeCheckerHelper {
      * be checked when actually trying to flatten the product, I hope.
      */
     private static Collection<DeltaClause> findDeltasForFeature(Model m, Feature f) {
-        Collection<DeltaClause> dcs = new ArrayList<DeltaClause>();
+        Collection<DeltaClause> dcs = new ArrayList<>();
         for (int i = 0; i < m.getProductLine().getNumDeltaClause(); i++) {
             DeltaClause dc = m.getProductLine().getDeltaClause(i);
             if (dc.refersTo(f)) {
@@ -292,7 +297,7 @@ public class TypeCheckerHelper {
     }
 
     public static <T extends ASTNode<?>> java.util.List<Type> getTypes(List<T> params) {
-        ArrayList<Type> res = new ArrayList<Type>();
+        ArrayList<Type> res = new ArrayList<>();
         for (ASTNode<?> u : params) {
             res.add(((HasType)u).getType());
         }
@@ -341,7 +346,7 @@ public class TypeCheckerHelper {
     static final StarImport STDLIB_IMPORT = new StarImport(Constants.STDLIB_NAME);
 
     public static void checkForDuplicateDecls(ModuleDecl mod, SemanticConditionList errors) {
-        Map<KindedName, ResolvedName> duplicateNames = new HashMap<KindedName, ResolvedName>();
+        Map<KindedName, ResolvedName> duplicateNames = new HashMap<>();
         Map<KindedName, ResolvedName> names = getVisibleNames(mod, duplicateNames);
         for (KindedName n : duplicateNames.keySet()) {
             ResolvedName rn = names.get(n);
@@ -364,14 +369,17 @@ public class TypeCheckerHelper {
             case FUN:
                 msg = ErrorMessage.DUPLICATE_FUN_NAME;
                 break;
+            case PARTIAL_FUN:
+                msg = ErrorMessage.DUPLICATE_PARTIAL_FUN_NAME;
+                break;
             case DATA_CONSTRUCTOR:
                 msg = ErrorMessage.DUPLICATE_CONSTRUCTOR;
                 break;
             case TYPE_DECL:
                 msg = ErrorMessage.DUPLICATE_TYPE_DECL;
                 break;
-            case EXCEPTION:
-                msg = ErrorMessage.DUPLICATE_EXCEPTION_DECL;
+            case TRAIT_DECL:
+                msg = ErrorMessage.DUPLICATE_TRAIT_NAME;
                 break;
             case MODULE:
                 assert false; // doesn't happen, no modules within modules
@@ -406,12 +414,12 @@ public class TypeCheckerHelper {
                     res.put(rn.getQualifiedName(), rn);
                 }
             } else if (d.isException()) {
+                // FIXME unreachable
                 ExceptionDecl ed = (ExceptionDecl) d;
-                DataConstructor ec = ed.dataConstructor;
+                DataConstructor ec = ed.getDataConstructor(0);
                 assert ec != null : ed.getName();
                 if (ec.getName().equals(d.getName())) {
-                    // should always be true, see Main.java where the data
-                    // constructor gets constructed
+                    // should always be true, see CreateJastAddASTListener
                     rn = new ResolvedDeclName(moduleName, ec);
                     // If it's already in there, is it from the same location -- from stdlib?
                     ResolvedName tryIt = res.get(rn);
@@ -536,7 +544,7 @@ public class TypeCheckerHelper {
      * check a list of compilation units for duplicate module names, product names, delta names
      */
     public static void checkForDuplicateModules(SemanticConditionList errors, Iterable<CompilationUnit> compilationUnits) {
-        Set<String> seenModules = new HashSet<String>();
+        Set<String> seenModules = new HashSet<>();
         for (CompilationUnit u : compilationUnits) {
             for (ModuleDecl module : u.getModuleDecls()) {
                 if (!seenModules.add(module.getName())) {
@@ -546,7 +554,7 @@ public class TypeCheckerHelper {
         }
     }
     public static void checkForDuplicateProducts(SemanticConditionList errors, Iterable<CompilationUnit> compilationUnits) {
-        Set<String> seen = new HashSet<String>();
+        Set<String> seen = new HashSet<>();
         for (CompilationUnit u : compilationUnits) {
             for (ProductDecl p : u.getProductDecls()) {
                 if (!seen.add(p.getName()))
@@ -555,7 +563,7 @@ public class TypeCheckerHelper {
         }
     }
     public static void checkForDuplicateDeltas(SemanticConditionList errors, Iterable<CompilationUnit> compilationUnits) {
-        Set<String> seen = new HashSet<String>();
+        Set<String> seen = new HashSet<>();
         for (CompilationUnit u : compilationUnits) {
             for (DeltaDecl d : u.getDeltaDecls()) {
                 if (!seen.add(d.getName()))
@@ -564,7 +572,7 @@ public class TypeCheckerHelper {
         }
     }
     public static void checkForDuplicateUpdates(SemanticConditionList errors, Iterable<CompilationUnit> compilationUnits) {
-        Set<String> seen = new HashSet<String>();
+        Set<String> seen = new HashSet<>();
         for (CompilationUnit u : compilationUnits) {
             for (UpdateDecl d : u.getUpdateDecls()) {
                 if (!seen.add(d.getName()))
@@ -582,7 +590,7 @@ public class TypeCheckerHelper {
     public static String getAlternativesAsString(AmbiguousDecl a) {
         String result = "";
         for (Decl alternative : a.getAlternative()) {
-            result += "\n * " + alternative.qualifiedName() +  " (defined in " +
+            result += "\n * " + alternative.getQualifiedName() +  " (defined in " +
                     alternative.getFileName() + ", line " + alternative.getStartLine() + ")";
         }
         return result;

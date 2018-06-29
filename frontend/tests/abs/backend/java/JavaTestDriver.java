@@ -51,4 +51,17 @@ public class JavaTestDriver implements BackendTestDriver {
         assertEquals(true, res);
     }
 
+    @Override
+    public BackendName getBackendName() {
+        return BackendName.JAVA;
+    }
+
+    @Override
+    public boolean supportsCustomSchedulers() { return false; }
+
+    @Override
+    public boolean supportsTimedAbs() { return false; }
+
+    @Override
+    public boolean supportsExceptions() { return false; }
 }

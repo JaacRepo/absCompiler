@@ -20,6 +20,7 @@ init(Req, _Opts) ->
             <<"static_dcs">> -> handle_static_dcs(cowboy_req:path_info(Req));
             <<"call">> -> handle_object_call(cowboy_req:path_info(Req),
                                              cowboy_req:parse_qs(Req));
+            <<"quit">> -> halt(0);
             _ -> {404, <<"text/plain">>, <<"Not found">>}
         end,
     Req2 = cowboy_req:reply(Status, #{<<"content-type">> => ContentType},
@@ -49,7 +50,7 @@ handle_object_query([Objectname]) ->
         notfound -> {404, <<"text/plain">>, <<"Object not found">>};
         deadobject -> {500, <<"text/plain">>, <<"Object dead">> };
         ok -> State=lists:map(fun ({Key, Value}) -> {Key, abs_to_json(Value)} end,
-                              object:get_whole_object_state(Object)),
+                              object:get_object_state_for_json(Object)),
               %% Special-case empty object for jsx:encode ([] is an empty JSON
               %% array, [{}] an empty JSON object)
               State2 = case State of [] -> [{}]; _ -> State end,

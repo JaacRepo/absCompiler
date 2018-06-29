@@ -1,16 +1,17 @@
-/** 
- * Copyright (c) 2009-2011, The HATS Consortium. All rights reserved. 
+/**
+ * Copyright (c) 2009-2011, The HATS Consortium. All rights reserved.
  * This file is licensed under the terms of the Modified BSD License.
  */
 package abs.frontend;
 
 import abs.frontend.analyser.*;
-import abs.frontend.delta.OriginalCallTest;
-import abs.frontend.delta.TraitTest;
+import abs.frontend.delta.DeltaTests;
 import abs.frontend.mtvl.SearchSolutionsTest;
+import abs.frontend.pardef.PardefTests;
 import abs.frontend.parser.*;
 import abs.frontend.typesystem.*;
 
+import abs.frontend.utils.UtilTests;
 import org.junit.runner.RunWith;
 import org.junit.runners.Suite;
 
@@ -25,7 +26,6 @@ import deadlock.DeadlockCheckerTests;
             DuplicateCheckTest.class,
             InterfaceDeclarationTest.class,
             ParseSamplesTest.class,
-            VarResolutionTest.class,
             TypingTest.class,
             TypeCheckerTest.class,
             NegativeTypeCheckerTests.class,
@@ -36,13 +36,13 @@ import deadlock.DeadlockCheckerTests;
             OtherAnalysisTests.class,
             AtomicityTests.class,
             BackPositionTest.class,
-            // IncompleteExpTests.class, // deactivated since switching parser to antlr
             SearchSolutionsTest.class,
             TestABSPackages.class,
             CaseStudyTypeChecking.class,
             DeadlockCheckerTests.class,
             DeadlockCasestudies.class,
-            OriginalCallTest.class,
-            TraitTest.class
+            DeltaTests.class,
+            PardefTests.class,
+            UtilTests.class
             })
 public class AllFrontendTests {}

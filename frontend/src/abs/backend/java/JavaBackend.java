@@ -1,5 +1,5 @@
-/** 
- * Copyright (c) 2009-2011, The HATS Consortium. All rights reserved. 
+/**
+ * Copyright (c) 2009-2011, The HATS Consortium. All rights reserved.
  * This file is licensed under the terms of the Modified BSD License.
  */
 package abs.backend.java;
@@ -10,6 +10,7 @@ import java.lang.reflect.Method;
 import java.util.*;
 import java.util.List;
 
+import abs.backend.common.InternalBackendException;
 import abs.backend.java.codegeneration.JavaCode;
 import abs.backend.java.codegeneration.JavaCodeGenerationException;
 import abs.backend.java.lib.runtime.ABSFut;
@@ -25,12 +26,17 @@ public class JavaBackend extends Main {
     public final static String CHARSET = "UTF-8";
 
     public static void main(final String... args) {
+        doMain(args);
+    }
+
+    public static int doMain(final String... args) {
+        int result = 0;
         JavaBackend backEnd = new JavaBackend();
         try {
-            backEnd.compile(args);
+            result = backEnd.compile(args);
         } catch (NotImplementedYetException e) {
             System.err.println(e.getMessage());
-            System.exit(0);
+            result = 1;
         } catch (Exception e) {
             System.err.println("An error occurred during compilation:\n" + e.getMessage());
 
@@ -38,8 +44,9 @@ public class JavaBackend extends Main {
                 e.printStackTrace();
             }
 
-            System.exit(1);
+            result = 1;
         }
+        return result;
     }
 
     private File destDir = new File("gen/");
@@ -48,17 +55,16 @@ public class JavaBackend extends Main {
     private boolean includeDebug = false;
 
     @Override
-    public List<String> parseArgs(String[] args) {
+    public List<String> parseArgs(String[] args) throws InternalBackendException {
         List<String> restArgs = super.parseArgs(args);
-        List<String> remainingArgs = new ArrayList<String>();
+        List<String> remainingArgs = new ArrayList<>();
 
         for (int i = 0; i < restArgs.size(); i++) {
             String arg = restArgs.get(i);
             if (arg.equals("-d")) {
                 i++;
                 if (i == restArgs.size()) {
-                    System.err.println("Please provide a destination directory");
-                    System.exit(1);
+                    throw new InternalBackendException("Destination directory name not given after '-d'");
                 } else {
                     destDir = new File(args[i]);
                 }
@@ -88,22 +94,23 @@ public class JavaBackend extends Main {
                 + "  -dynamic       generate dynamically updateable code\n");
     }
 
-    private void compile(String[] args) throws Exception {
-        final Model model = parse(args);
-        if (model.hasParserErrors() || model.hasErrors() || model.hasTypeErrors())
-            printParserErrorAndExit();
+    private int compile(String[] args) throws Exception {
+                final Model model = parse(args);
+        if (model.hasParserErrors() || model.hasErrors() || model.hasTypeErrors()) {
+            printErrorMessage();
+            return 1;
+        }
         destDir.mkdirs();
         if (!destDir.exists()) {
-            System.err.println("Destination directory " + destDir.getAbsolutePath() + " does not exist!");
-            System.exit(1);
+            throw new InternalBackendException("Destination directory " + destDir.getAbsolutePath() + " does not exist!");
         }
 
         if (!destDir.canWrite()) {
-            System.err.println("Destination directory " + destDir.getAbsolutePath() + " cannot be written to!");
-            System.exit(1);
+            throw new InternalBackendException("Destination directory " + destDir.getAbsolutePath() + " cannot be written to!");
         }
 
         compile(model, destDir);
+        return 0;
     }
 
     private void compile(Model m, File destDir) throws IOException, JavaCodeGenerationException {
@@ -124,9 +131,10 @@ public class JavaBackend extends Main {
     private static final Map<String, String> dataTypeMap = initDataTypeMap();
 
     private static Map<String, String> initDataTypeMap() {
-        final Map<String, String> res = new HashMap<String, String>();
+        final Map<String, String> res = new HashMap<>();
         res.put("Int", ABSInteger.class.getName());
         res.put("Rat", ABSRational.class.getName());
+        res.put("Float", ABSFloat.class.getName());
         res.put("Bool", ABSBool.class.getName());
         res.put("String", ABSString.class.getName());
         res.put("Fut", ABSFut.class.getName());
@@ -138,14 +146,14 @@ public class JavaBackend extends Main {
     public static boolean isBuiltinDataType(Type absType) {
         if (absType.isDataType())
             return dataTypeMap.containsKey(((DataTypeType)absType).getDecl().getName());
-        else 
+        else
             return false;
     }
-    
+
     public static String getJavaType(ConstructorArg u) {
         return getJavaType(u.getTypeUse());
     }
-    
+
     public static String getJavaType(TypeUse absType) {
         return getQualifiedString(absType.getType());
     }
@@ -165,25 +173,25 @@ public class JavaBackend extends Main {
             res = dataTypeMap.get(dt.getDecl().getName());
             if (res != null)
                 return res;
-            
+
             StringBuilder sb = new StringBuilder();
             if (dt.hasTypeArgs() && !containsUnboundedType(dt.getTypeArgs())) {
-                sb.append("<"); 
-                boolean first = true; 
-                for (Type t : dt.getTypeArgs()) { 
+                sb.append("<");
+                boolean first = true;
+                for (Type t : dt.getTypeArgs()) {
                     if (first)
-                        first = false; 
+                        first = false;
                     else
-                        sb.append(','); 
-                    sb.append(getQualifiedString(t)); 
+                        sb.append(',');
+                    sb.append(getQualifiedString(t));
                 }
-                sb.append(">"); 
+                sb.append(">");
             }
             return getQualifiedString(dt.getDecl()) + sb.toString();
             /*
              * if (dt.hasTypeArgs() && !containsUnboundedType(dt.getTypeArgs()))
              * {
-             * 
+             *
              * sb.append("<"); boolean first = true; for (Type t :
              * dt.getTypeArgs()) { if (first) first = false; else
              * sb.append(','); sb.append(getQualifiedString(t)); }
@@ -231,7 +239,7 @@ public class JavaBackend extends Main {
             "finally", "native", "super", "while", "char", "float", "new", "switch", "class", "for", "package",
             "synchronized", "continue", "if", "private", "this", "default", "implements", "protected", "throw",
             "const", "goto", "null", "true", "false", "abs" };
-    private static final Set<String> JAVA_RESERVED_WORDS = new HashSet<String>();
+    private static final Set<String> JAVA_RESERVED_WORDS = new HashSet<>();
 
     static {
         for (String s : JAVA_RESERVED_WORDS_ARRAY) {
@@ -256,7 +264,7 @@ public class JavaBackend extends Main {
     public static String getInterfaceName(String name) {
         return truncate(name + "_i");
     }
-    
+
     public static String getClassName(String name) {
         return truncate(name + "_c");
     }
@@ -276,11 +284,11 @@ public class JavaBackend extends Main {
     public static String getDeltaPackageName(String name) {
         return truncate(JavaBackendConstants.LIB_DELTAS_PACKAGE + "." + name);
     }
-    
+
     public static String getUpdateName(String name) {
         return truncate(name + "_upd");
     }
-    
+
     public static String getModifierPackageName(String name) {
         return truncate(JavaBackendConstants.LIB_DELTAS_PACKAGE + "." + name);
     }
@@ -288,7 +296,7 @@ public class JavaBackend extends Main {
     public static String getModifierName() {
         return truncate("Mod_" + getRandomName());
     }
-    
+
     public static String getFunctionName(String name) {
         return truncate(escapeReservedWords(name) + "_f");
     }
@@ -335,7 +343,7 @@ public class JavaBackend extends Main {
         return result;
     }
 
-    // Shorten name to 255 chars as files with these names are created    
+    // Shorten name to 255 chars as files with these names are created
     private static String truncate(String s) {
         int maxlength = 200;
         if (s.length() < maxlength) {
@@ -355,12 +363,12 @@ public class JavaBackend extends Main {
     }
 
     /**
-     * get the fully qualified java name for the main block of a given module 
+     * get the fully qualified java name for the main block of a given module
      */
     public static String getFullJavaNameForMainBlock(ModuleDecl module) {
         return module.getName() + "." + getJavaNameForMainBlock();
     }
-    
+
     /**
      * Just return a randomly generated string
      */

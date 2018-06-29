@@ -1,5 +1,5 @@
 %%This file is licensed under the terms of the Modified BSD License.
--module(modelapi).
+-module(modelapi_v2).
 -include_lib("abs_types.hrl").
 
 -behaviour(cowboy_handler).
@@ -20,7 +20,9 @@ init(Req, _Opts) ->
             <<"o">> -> handle_object_query(cowboy_req:path_info(Req));
             <<"static_dcs">> -> handle_static_dcs(cowboy_req:path_info(Req));
             <<"call">> -> handle_object_call(cowboy_req:path_info(Req),
-                                             cowboy_req:parse_qs(Req));
+                                             cowboy_req:parse_qs(Req),
+                                             Req);
+            <<"quit">> -> halt(0);              %sorry
             _ -> {404, <<"text/plain">>, <<"Not found">>}
         end,
     Req2 = cowboy_req:reply(Status, #{<<"content-type">> => ContentType},
@@ -41,7 +43,7 @@ handle_object_query([Objectname, Fieldname]) ->
         _ -> case Value=object:get_field_value(Object, binary_to_atom(Fieldname, utf8)) of
                  none -> {404, <<"text/plain">>, <<"Field not found">>};
                  _ -> Result=[{Fieldname, abs_to_json(Value)}],
-                      {200, <<"application/json">>, jsx:encode(Result)}
+                      {200, <<"application/json">>, jsx:encode(Result, [{space, 1}, {indent, 2}])}
              end
     end;
 handle_object_query([Objectname]) ->
@@ -50,39 +52,43 @@ handle_object_query([Objectname]) ->
         notfound -> {404, <<"text/plain">>, <<"Object not found">>};
         deadobject -> {500, <<"text/plain">>, <<"Object dead">> };
         ok -> State=lists:map(fun ({Key, Value}) -> {Key, abs_to_json(Value)} end,
-                              object:get_whole_object_state(Object)),
+                              object:get_object_state_for_json(Object)),
               %% Special-case empty object for jsx:encode ([] is an empty JSON
               %% array, [{}] an empty JSON object)
               State2 = case State of [] -> [{}]; _ -> State end,
-              { 200, <<"application/json">>, jsx:encode(State2)}
+              { 200, <<"application/json">>, jsx:encode(State2, [{space, 1}, {indent, 2}])}
     end;
 handle_object_query([]) ->
     Names=cog_monitor:list_registered_http_names(),
-    { 200, <<"application/json">>, jsx:encode(Names) }.
+    { 200, <<"application/json">>, jsx:encode(Names, [{space, 1}, {indent, 2}]) }.
 
-handle_object_call([Objectname], _Params) ->
+handle_object_call([], _Parameters, _Req) ->
+    Names=cog_monitor:list_registered_http_names(),
+    { 200, <<"application/json">>, jsx:encode(Names, [{space, 1}, {indent, 2}]) };
+handle_object_call([Objectname], _Params, _Req) ->
     {State, Object}=cog_monitor:lookup_object_from_http_name(Objectname),
     case State of
         notfound ->  {404, <<"text/plain">>, <<"Object not found">>};
         deadobject -> {500, <<"text/plain">>, <<"Object dead">> };
         _ ->
-            Result=lists:map(fun ({Name, {_, Return, Params}}) ->
-                                     #{ 'name' => Name,
-                                        'return' => Return,
-                                        'parameters' =>
-                                            lists:map(fun({PName, PType}) ->
-                                                              #{
-                                                           'name' => PName,
-                                                           'type' => PType
-                                                          }
-                                                      end,
-                                                      Params)
-                                      }
-                             end,
-                             maps:to_list(object:get_all_method_info(Object))),
-            { 200, <<"application/json">>, jsx:encode(Result) }
+            Result=lists:map(
+                     fun ({Name, {_, Return, Params}}) ->
+                             #{ 'name' => Name,
+                                'return' => Return,
+                                'parameters' =>
+                                    lists:map(fun({PName, PDescription, _PType, _PTypeArgs}) ->
+                                                  #{
+                                                   'name' => PName,
+                                                   'type' => PDescription
+                                                  }
+                                              end,
+                                              Params)
+                              }
+                     end,
+                     maps:to_list(object:get_all_method_info(Object))),
+            { 200, <<"application/json">>, jsx:encode(Result, [{space, 1}, {indent, 2}]) }
     end;
-handle_object_call([Objectname, Methodname], Parameters) ->
+handle_object_call([Objectname, Methodname], Parameters, Req) ->
     %% _Params is a list of 2-tuples of binaries
     {State, Object}=cog_monitor:lookup_object_from_http_name(Objectname),
     case State of
@@ -93,42 +99,61 @@ handle_object_call([Objectname, Methodname], Parameters) ->
             case maps:is_key(Methodname, Methods) of
                 false -> { 400, <<"text/plain">>, <<"Object does not support method">> };
                 true ->
+                    %% FIXME: we ignore the updated request `Req2'.  Hopefully
+                    %% this won't matter since we don't attempt to read the
+                    %% request body again (body can only be read once).
+                    {ok, Body, Req2} = case cowboy_req:has_body(Req) of
+                               false -> {ok, <<"[]">>, Req};
+                               true -> cowboy_req:read_body(Req)
+                           end,
                     {Method, _ReturnType, ParamDecls}=maps:get(Methodname, Methods),
-                    {Success, ParamValues} = decode_parameters(Parameters, ParamDecls),
-                    case Success of
-                        ok ->
+                    case decode_parameters(Parameters, ParamDecls, Body) of
+                        { ok, ParamValues } ->
                             Future=future:start_for_rest(Object, Method, ParamValues ++ [[]], #process_info{method=Methodname}),
                             Result=case future:get_for_rest(Future) of
                                 {ok, Value} ->
                                     { 200, <<"application/json">>,
-                                      jsx:encode([{'result', abs_to_json(Value)}]) };
+                                      jsx:encode([{'result', abs_to_json(Value)}],
+                                                 [{space, 1}, {indent, 2}]) };
                                 {error, Error} ->
                                     { 500, <<"application/json">>,
-                                      jsx:encode([{'error', abs_to_json(Error)}]) }
+                                      jsx:encode([{'error', abs_to_json(Error)}],
+                                                 [{space, 1}, {indent, 2}]) }
                             end,
                             future:die(Future, ok),
                             Result;
-                        error -> { 400, <<"text/plain">>, <<"Error during parameter decoding">> }
+                        { error, Msg } ->
+                            { 400, <<"application/json">>,
+                              jsx:encode([{'error', Msg }],
+                                         [{space, 1}, {indent, 2}]) }
                     end
             end
-    end;
-handle_object_call([], _Parameters) ->
-    Names=cog_monitor:list_registered_http_names(),
-    { 200, <<"application/json">>, jsx:encode(Names) }.
-
-decode_parameters(Parameters, ParamDecls) ->
-    PValues = maps:from_list(Parameters),
-    try {ok, lists:map(fun({Name, Type}) ->
-                      decode_parameter(maps:get(Name, PValues), Type)
-              end, ParamDecls)}
-    catch _:_ ->
-            {error, null}
     end.
 
-decode_parameter(Value, Type) ->
+decode_parameters(URLParameters, ParamDecls, Body) ->
+    %% TODO: There could be better error reporting here:
+    %% - check for well-formed JSON body (needs to be a list)
+    %% - When parameter missing: report its name
+    try
+        BodyValues = jsx:decode(Body),
+        Parameters = maps:merge(
+                       %% URL parameters override JSON parameters
+                       maps:from_list(BodyValues), maps:from_list(URLParameters)),
+        {ok, lists:map(fun({Name, _Description, Type, TypeArgs}) ->
+                               decode_parameter(maps:get(Name, Parameters), Type, TypeArgs)
+                       end, ParamDecls)}
+    catch _:_ ->
+            {error, <<"Error during parameter decoding">>}
+    end.
+
+decode_parameter(Value, Type, TypeArgs) ->
     case Type of
         <<"ABS.StdLib.Bool">> ->
             case Value of
+                %% JSON
+                true -> true;
+                false -> false;
+                %% URLencoded
                 <<"True">> -> true;
                 <<"true">> -> true;
                 <<"False">> -> false;
@@ -136,8 +161,23 @@ decode_parameter(Value, Type) ->
             end;
         <<"ABS.StdLib.String">> ->
             Value;
+        <<"ABS.StdLib.Float">> ->
+            case is_float(Value) of
+                %% JSON
+                true -> Value;
+                %% URLencoded
+                false -> binary_to_float(Value)
+            end;
         <<"ABS.StdLib.Int">> ->
-            binary_to_integer(Value)
+            case is_integer(Value) of
+                %% JSON
+                true -> Value;
+                %% URLencoded
+                false -> binary_to_integer(Value)
+            end;
+        <<"ABS.StdLib.List">> ->
+            {Type2, TypeArgs2} = TypeArgs,
+            lists:map(fun(V) -> decode_parameter(V, Type2, TypeArgs2) end, Value)
     end.
 
 abs_to_json(true) -> true;
@@ -212,8 +252,8 @@ get_statistics_json() ->
                                     {<<"values">>, create_history_list(CreationTime, History, Totalhistory)}]
                            end, DC_infos),
     io_lib:format("Deployment components:~n~w~n",
-                  [jsx:encode(DC_info_json)]),
-    jsx:encode(DC_info_json).
+                  [jsx:encode(DC_info_json, [{space, 1}, {indent, 2}])]),
+    jsx:encode(DC_info_json, [{space, 1}, {indent, 2}]).
 
 
 handle_static_dcs([]) ->

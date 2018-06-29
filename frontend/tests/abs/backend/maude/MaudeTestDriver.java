@@ -48,4 +48,19 @@ public class MaudeTestDriver implements BackendTestDriver {
         String code = out.toString();
         maude.assertMaudeCodeResult(code, "ABS.StdLib.True");
     }
+
+    @Override
+    public BackendName getBackendName() {
+        return BackendName.MAUDE;
+    }
+
+    @Override
+    public boolean supportsCustomSchedulers() { return true; }
+
+    @Override
+    public boolean supportsTimedAbs() { return maude.mode == MaudeCompiler.SIMULATOR.EQ_TIMED; }
+
+    @Override
+    // MISSING: recovery block, throwing exceptions from expressions
+    public boolean supportsExceptions() { return false; }
 }

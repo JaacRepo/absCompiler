@@ -13,6 +13,7 @@ import java.util.Set;
 
 import abs.frontend.analyser.SemanticCondition;
 import abs.frontend.analyser.SemanticConditionList;
+import abs.backend.common.InternalBackendException;
 import abs.common.WrongProgramArgumentException;
 import abs.frontend.ast.Model;
 import abs.frontend.parser.Main;
@@ -28,7 +29,6 @@ public class ABSTest {
         EXPECT_PARSE_ERROR,
         EXPECT_TYPE_ERROR,
         EXPECT_WARNING,
-        ALLOW_INCOMPLETE_EXPR,
         TYPE_CHECK
     }
 
@@ -84,10 +84,7 @@ public class ABSTest {
         if (!isSet(WITHOUT_MODULE_NAME, config))
             s = preamble + s;
         try {
-            Model p = Main.parseString(s, isSet(WITH_STD_LIB, config),
-                    isSet(ALLOW_INCOMPLETE_EXPR, config));
-
-            Main.exceptionHack(p);
+            Model p = Main.parseString(s, isSet(WITH_STD_LIB, config));
 
             if (isSet(EXPECT_PARSE_ERROR,config)) {
                 if (!p.hasParserErrors())
@@ -96,7 +93,13 @@ public class ABSTest {
                 if (p.hasParserErrors()) {
                     fail("Failed to parse: " + s + "\n" + p.getParserErrors().get(0).getMessage());
                 } else {
+                    // make ProductDecl.getProduct() not return null
+                    p.evaluateAllProductDeclarations();
                     if (isSet(TYPE_CHECK, config)) {
+                        // copy other choice parts of Main.analyzeFlattenAndRewriteModel
+                        p.flattenTraitOnly();
+                        p.collapseTraitModifiers();
+                        p.expandPartialFunctions();
                         if (isSet(WITH_LOC_INF, config)) {
                             LocationTypeInferrerExtension ltie = new LocationTypeInferrerExtension(p);
                             p.registerTypeSystemExtension(ltie);
@@ -127,7 +130,7 @@ public class ABSTest {
     /**
      * Note: does not handle EXPECT_*.
      */
-    static public Model assertParseFileOk(String fileName, Config... config) throws IOException, WrongProgramArgumentException {
+    static public Model assertParseFileOk(String fileName, Config... config) throws IOException, WrongProgramArgumentException, InternalBackendException {
         Main main = new Main();
         main.setWithStdLib(isSet(WITH_STD_LIB,config));
         Model m = main.parseFiles(resolveFileName(fileName));
@@ -135,7 +138,7 @@ public class ABSTest {
         return assertParseModelOk(m, config);
     }
 
-    protected Model assertParseFilesOk(Set<String> fileNames, Config... config) throws IOException {
+    protected Model assertParseFilesOk(Set<String> fileNames, Config... config) throws IOException, InternalBackendException {
         Main main = new Main();
         main.setWithStdLib(isSet(WITH_STD_LIB,config));
         Model m = main.parseFiles(fileNames.toArray(new String[0]));

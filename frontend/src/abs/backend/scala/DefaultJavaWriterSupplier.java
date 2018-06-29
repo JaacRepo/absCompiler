@@ -18,12 +18,12 @@ public class DefaultJavaWriterSupplier implements JavaWriterSupplier {
   private final Path outputDirectory;
 
   public DefaultJavaWriterSupplier(PathResolver pathResolver, String packageName,
-      Path outputDirectory) {
+                                   Path outputDirectory) {
     this(pathResolver, packageName, ".java", outputDirectory);
   }
 
   public DefaultJavaWriterSupplier(PathResolver pathResolver, String packageName, String extension,
-      Path outputDirectory) {
+                                   Path outputDirectory) {
     this.pathResolver = pathResolver;
     this.packageName = packageName;
     this.extension = extension;

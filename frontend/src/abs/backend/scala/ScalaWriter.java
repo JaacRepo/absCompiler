@@ -2,28 +2,18 @@ package abs.backend.scala;
 
 import static javax.lang.model.element.Modifier.ABSTRACT;
 
-import java.io.Closeable;
 import java.io.IOException;
 import java.io.Writer;
-import java.lang.annotation.Annotation;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
-import java.util.Deque;
 import java.util.EnumSet;
 import java.util.HashMap;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import javax.lang.model.element.Modifier;
 
@@ -221,12 +211,12 @@ public class ScalaWriter extends JavaWriter {
      */
     @Override
     public ScalaWriter beginType(String type, String kind, Set<Modifier> modifiers, String extendsType,
-            String... implementsTypes) throws IOException {
+                                 String... implementsTypes) throws IOException {
         return beginType(type, kind, modifiers, extendsType, null, implementsTypes);
     }
 
     public ScalaWriter beginType(String type, String kind, Set<Modifier> modifiers, String extendsType,
-            List<String> parameters, String... implementsTypes) throws IOException {
+                                 List<String> parameters, String... implementsTypes) throws IOException {
         indent();
         emitModifiers(modifiers);
         out.write(kind.equals("interface") ? "trait" : kind);
@@ -361,7 +351,7 @@ public class ScalaWriter extends JavaWriter {
      */
     @Override
     public ScalaWriter beginMethod(String returnType, String name, Set<Modifier> modifiers, List<String> parameters,
-            List<String> throwsTypes) throws IOException {
+                                   List<String> throwsTypes) throws IOException {
         indent();
         // emitModifiers(modifiers);
         out.write("def");

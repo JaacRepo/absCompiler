@@ -4,12 +4,13 @@
 -record(cog,{ref,dc}).
 -record(process_info,
        {pid=undefined,                % filled in at creation time with self()
-        method= <<"">> ,              % name of the executing method
+        this=undefined,               % pid of the task's object (`null` for main task)
+        destiny=undefined,            % pid of the task's future (`null` for main task and init task)
+        method= <<"">> ,              % name of the executing method (file GenerateErlang.jadd)
+        creation={dataTime, 0},       % filled in at point of async call (file GenerateErlang.jadd)
         arrival={dataTime, -1},       % filled in by cog when receiving signal
         cost=dataInfDuration,         % filled in via annotation
-        procDeadline=dataInfDuration, % deadline relative to time at call
+        proc_deadline=dataInfDuration, % deadline relative to time at call, filled in via annotation cat point of async call (file GenerateErlang.jadd)
         start={dataTime, -1},         % filled in upon first scheduling
-        finish={dataTime, -1},        % filled in by return statement, I guess?
-        crit=false,                   % filled in via annotation
-        value=0                       % calculated from process state?
+        crit=false                    % filled in via annotation
        }).

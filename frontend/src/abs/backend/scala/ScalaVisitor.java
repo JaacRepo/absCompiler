@@ -1,20 +1,13 @@
 /**
- * Copyright (c) 2009-2011, The HATS Consortium. All rights reserved. 
+ * Copyright (c) 2009-2011, The HATS Consortium. All rights reserved.
  * This file is licensed under the terms of the Modified BSD License.
  */
 package abs.backend.scala;
 
 import java.io.IOException;
 
-import java.io.PrintWriter;
-
 import java.io.StringWriter;
-import java.io.Writer;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
-import java.util.AbstractMap;
-import java.util.AbstractMap.SimpleEntry;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -22,12 +15,11 @@ import java.util.Collections;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
@@ -38,12 +30,13 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.function.Function;
 import java.util.logging.Logger;
-import java.util.regex.Matcher;
-import java.util.stream.Collectors;
 
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
 
+import abs.common.CompilerUtils;
+import abs.frontend.typechecker.BoundedType;
+import abs.frontend.typechecker.InterfaceType;
 import com.google.common.base.StandardSystemProperty;
 import com.google.common.base.Supplier;
 import com.google.common.collect.Multimap;
@@ -51,20 +44,22 @@ import com.google.common.collect.Multimaps;
 import com.google.common.collect.Sets;
 
 //import ScalaVisitor.AbsElementType;
-import abs.api.cwi.ABSFuture;
-import abs.api.cwi.Actor;
-import abs.api.cwi.Functional;
-import abs.api.cwi.LocalActor;
-import abs.backend.scala.ScalaWriter;
 import abs.frontend.ast.*;
 import abs.frontend.typechecker.DataTypeType;
 import abs.frontend.typechecker.Type;
-import choco.cp.solver.constraints.global.geost.internalConstraints.AvoidHoles;
-import abs.backend.scala.MethodDefinition;
 
 public class ScalaVisitor {
+    public static final String CONSTRUCTOR = "constructor";
     private static final String GET_SPAWN = "getSpawn";
-    static int x = 0;
+    private static final String CONS_FUT = "constructorFuture";
+    public static final String GET_CONSTRUCTOR_FUTURE = "getConstructorFuture";
+    public static final String INSTANCE_OF = "asInstanceOf";
+    public static final String DEPLOYMENT_COMPONENT = "DeploymentComponent";
+    public static final String MOVE_TO_COG = "moveToCOG";
+    public static final String SET_DC = "setDc";
+    public static final String CLASS_DC = "ClassDeploymentComponent";
+    private boolean fromConstructor=false;
+    private boolean hasRun=false;
 
     static enum AbsElementType {
         /**
@@ -95,9 +90,7 @@ public class ScalaVisitor {
         /**
          * An exception declaration.
          */
-        EXCEPTION,
-
-        ;
+        EXCEPTION,;
     }
 
     // Constants
@@ -113,16 +106,17 @@ public class ScalaVisitor {
     private static final String MAIN_CLASS_NAME = "Main";
     private static final String COMMA_SPACE = ", ";
     private static final String METHOD_GET = "geT";
-    private static final String SYNC_GET = "getOrNull()"; // this is a shortcut
-                                                          // to optimize those
-                                                          // calls that are
-                                                          // synchronous and
-                                                          // complete (these
-                                                          // calls DO NOT
-                                                          // contain an await or
-                                                          // a chain of calls
-                                                          // that have an
-                                                          // await).
+    private static final String SYNC_GET = "getCompleted()"; // this is a shortcut
+    private static final String GET_DC="getDc()";
+    // to optimize those
+    // calls that are
+    // synchronous and
+    // complete (these
+    // calls DO NOT
+    // contain an await or
+    // a chain of calls
+    // that have an
+    // await).
     private static final String EXTERN = "JavaExternClass";
     private static final String STATIC = "JavaStaticClass";
     private static final String ACTOR_SERVER_MEMBER = "me";
@@ -132,6 +126,7 @@ public class ScalaVisitor {
     private static final String NEW_LINE = StandardSystemProperty.LINE_SEPARATOR.value();
     private static final String ABS_API_ACTOR_CLASS = "LocalActor";
     private static final String ABS_API_INTERFACE_CLASS = "Actor";
+
     private static final String ABS_STDLIB = "ABS.StdLib";
 
     static final String ABSFUTURE_CLASS = "ABSFuture";
@@ -143,10 +138,12 @@ public class ScalaVisitor {
     // private static final String ABS_API_ACTOR_SERVER_CLASS =
     // ActorServer.class.getName();
     private static final Set<Modifier> DEFAULT_MODIFIERS = new HashSet<>();
-    private static final String[] DEFAULT_IMPORTS = new String[] { ABSFuture.class.getPackage().getName() + ALL_IMPORTS,
-            ABSFuture.class.getPackage().getName() + "." + FUNCTIONS_CLASS_NAME + ALL_IMPORTS,
+    private static final String[] DEFAULT_IMPORTS = new String[]{ABSFUTURE_CLASS + ALL_IMPORTS,
+            ABSFUTURE_CLASS + "." + FUNCTIONS_CLASS_NAME + ALL_IMPORTS,
             Function.class.getPackage().getName() + ALL_IMPORTS, Callable.class.getPackage().getName() + ALL_IMPORTS,
             AtomicLong.class.getPackage().getName() + ALL_IMPORTS, Lock.class.getPackage().getName() + ALL_IMPORTS,
+            "abs.api.realtime" + ALL_IMPORTS,
+            "ABS.DC"+ALL_IMPORTS,
             // LocalActor.class.getPackage().getName() + ALL_IMPORTS,
             // "absstdlib.Functions" + ALL_IMPORTS, "absstdlib" + ALL_IMPORTS,
             // "scala.collection.mutable.Set",
@@ -163,7 +160,7 @@ public class ScalaVisitor {
     // private static final String[] DEFAULT_IMPORTS_PATTERNS = new String[] {
     // "com.leacox.motif.function.*", "com.leacox.motif.matching.*",
     // "com.leacox.motif.cases.*", "com.leacox.motif.caseclass.*" };
-    private static final String[] DEFAULT_STATIC_IMPORTS = new String[] {
+    private static final String[] DEFAULT_STATIC_IMPORTS = new String[]{
             // Functional.class.getPackage().getName() + "." +
             // Functional.class.getSimpleName() + ALL_IMPORTS,
             // CloudProvider.class.getPackage().getName() + "." +
@@ -194,13 +191,16 @@ public class ScalaVisitor {
     private final String packageName;
     private final ScalaTypeTranslator javaTypeTranslator;
     private final Path outputDirectory;
-    private final String[] ignoreCodeGen = new String[] { "Rat", "Bool", "Int", "Fut", "True", "False", "Unit",
-            "String", "Exception", "numerator", "denominator", "truncate", "random", "substr", "strlen", "toString",
-            "print", "println", "readln", "currentms", "watch", "watchEx", "lowlevelDeadline" };// ,
-                                                                                                // "currentms"
-                                                                                                // };
+    private final String[] ignoreCodeGen = new String[]{"Rat", "Bool", "Int", "Fut", "True", "False", "Unit", "Float",
+            "String", "Exception", "numerator", "denominator", "truncate", "random", "substr", "log","exp","sqrt", "float", "rat", "floor", "ceil", "strlen", "toString",
+            "print", "println", "readln", "currentms", "watch", "watchEx", "lowlevelDeadline"};// ,
+    // "currentms"
+    // };
     private final Set<String> builtinSet = new HashSet<>(Arrays.asList(ignoreCodeGen));
     private static final Map<String, String> dataCollisions = new HashMap<>();
+    private static final Map<String, String> interfaceCollisions = new HashMap<>();
+    private static final Map<String, String> classCollisions = new HashMap<>();
+
 
     // Internal state
     private final Multimap<String, MethodDefinition> methods = Multimaps.newSetMultimap(new HashMap<>(),
@@ -218,10 +218,10 @@ public class ScalaVisitor {
                 }
             });
 
-    private final LinkedList<TreeSet<VarDefinition>> variablesInScope = new LinkedList<>();
+    private LinkedList<TreeSet<VarDefinition>> variablesInScope = new LinkedList<>();
     private final HashSet<VarDefinition> variablesBeforeBlock = new HashSet<>();
 
-    private final HashMap<String, MethodDefinition> programMethods = new HashMap<>();
+    public static final LinkedHashMap<String, MethodDefinition> programMethods = new LinkedHashMap<>();
 
     // private final HashMap<String, List<String>> paramConstructs = new
     // HashMap<>();
@@ -236,6 +236,7 @@ public class ScalaVisitor {
     private boolean fromSupplier = false;
     private boolean fromEquals = false;
     private boolean fromInit = false;
+
     // private boolean avoidDeadCode = false;
     private String initType = "";
 
@@ -256,7 +257,7 @@ public class ScalaVisitor {
 
     private final Map<String, String> caseMap = new HashMap<>();
 
-    private MethodDefinition currentMethod;
+    private MethodDefinition currentMethod=null;
 
     public boolean awaitsDetected = false;
 
@@ -267,19 +268,15 @@ public class ScalaVisitor {
 
     /**
      * Ctor.
-     * 
-     * @param packageName
-     *            the package spec of the program
-     * @param prog
-     *            the parsed {@link Prog} AST node
-     * @param javaWriterSupplier
-     *            the {@link JavaWriterSupplier} for each top-level element
-     * @param javaTypeTranslator
-     *            The ABS to Java type translator
+     *
+     * @param packageName        the package spec of the program
+     * @param prog               the parsed {@link Model} AST node
+     * @param javaWriterSupplier the {@link JavaWriterSupplier} for each top-level element
+     * @param javaTypeTranslator The ABS to Java type translator
      * @param outputDirectory
      */
     public ScalaVisitor(String packageName, Model prog, JavaWriterSupplier javaWriterSupplier,
-            ScalaTypeTranslator javaTypeTranslator, Path outputDirectory) {
+                        ScalaTypeTranslator javaTypeTranslator, Path outputDirectory) {
         this.packageName = packageName;
         this.prog = prog;
         this.javaWriterSupplier = javaWriterSupplier;
@@ -369,29 +366,20 @@ public class ScalaVisitor {
             // System.out.println(programMethods);
         } while (awaitsDetected);
         for (ModuleDecl module : program.getModuleDecls()) {
+            modules.push(module);
             visit(module, w);
             modules.pop();
         }
+        //System.out.println(programMethods);
+
 
     }
 
     public void visit(ModuleDecl m, ScalaWriter w) {
-
         buildProgramDeclarationTypes(m);
-        do {
-            awaitsDetected = false;
-            ScalaWriter notNeeded = new ScalaWriter(true, new StringWriter(), true);
-            System.out.println("Checking awaits ");
-            moduleNames.add(m.getName());
-            modules.push(m);
-            for (Decl ad : elements.get(AbsElementType.CLASS)) {
-                ad.accept(this, notNeeded);
-            }
-            modules.pop();
-            System.out.println("DONE Checking awaits ");
 
-        } while (awaitsDetected);
-        // System.out.println(programMethods);
+        //preVisit(m);
+        //System.out.println(programMethods);
         // System.out.println(elements);
 
         moduleNames.add(m.getName());
@@ -495,6 +483,29 @@ public class ScalaVisitor {
             throw new RuntimeException(e);
         }
         modules.pop();
+    }
+
+    public void preVisit(ModuleDecl m) {
+        buildProgramDeclarationTypes(m);
+        do {
+            awaitsDetected = false;
+            ScalaWriter notNeeded = new ScalaWriter(true, new StringWriter(), true);
+            System.out.println("Checking awaits ");
+            moduleNames.add(m.getName());
+            modules.push(m);
+            for (Decl ad : elements.get(AbsElementType.CLASS)) {
+                ad.accept(this, notNeeded);
+            }
+
+            for (Decl ad : elements.get(AbsElementType.TYPE)) {
+                Decl decl = (Decl) ad;
+                ad.accept(this, notNeeded);
+            }
+
+            modules.pop();
+            System.out.println("DONE Checking awaits ");
+
+        } while (awaitsDetected);
     }
 
     public void visit(NamedImport p, ScalaWriter w) {
@@ -608,6 +619,10 @@ public class ScalaVisitor {
 
                 String returnType = String.format("%s[%s]", ABSFUTURE_CLASS, auxsw.toString());
                 String name = ms.getName().equals(METHOD_GET) ? "get" : ms.getName();
+                if(name.equals("run")) {
+                    System.out.println("Found run in"+ currentClass());
+                    hasRun = true;
+                }
                 List<String> parameterTypes = new ArrayList<>();
                 for (ParamDecl param : ms.getParams()) {
                     StringWriter typesw = new StringWriter();
@@ -619,7 +634,7 @@ public class ScalaVisitor {
                     // createVarDefinition(p.l_, paramType);
                 }
                 createMethodDefinition(returnType, name, parameterTypes);
-                visitMethodBody(mcb, w);
+                visitMethodBody(mcb.getBlock(), w);
 
             } else {
 
@@ -634,6 +649,14 @@ public class ScalaVisitor {
                 ms.getReturnType().accept(this, auxw);
                 String returnType = String.format("%s[%s]", ABSFUTURE_CLASS, auxsw.toString());
                 String name = ms.getName().equals(METHOD_GET) ? "get" : ms.getName();
+
+                if(name.equals("run")) {
+                    System.out.println("Found run in"+ currentClass());
+                    hasRun = true;
+                }
+
+                //if (name.equals("run"))
+                //    System.out.println(programMethods);
 
                 List<String> parameters = new ArrayList<>();
                 List<String> parameterTypes = new ArrayList<>();
@@ -666,19 +689,19 @@ public class ScalaVisitor {
                 syncPCounter = 0;
 
                 w.avoiddc = false;
-                
-                System.out.println("Building method for " + name);
+
+                //System.out.println("Building method for " + name);
                 for (Stmt annStm : mcb.getBlock().getStmts()) {
                     if (!w.avoiddc)
                         annStm.accept(this, w);
-                    
+
                 }
                 w.avoiddc = false;
                 if (auxsw.toString().equals("Void")) {
                     w.emitStatement("return %s.done()", ABSFUTURE_CLASS);
                 }
 
-                System.out.println("Done method for " + name);
+                //System.out.println("Done method for " + name);
 
                 variablesInScope.pop();
 
@@ -686,11 +709,11 @@ public class ScalaVisitor {
                 asyncPCounter = 0;
                 syncPCounter = 0;
 
-                System.out.println("Building continuations for " + name);
+                //System.out.println("Building continuations for " + name);
                 continuation(copyOfMcb, new LinkedList<>(), true);
                 // visitStatementsBlock(mcb.listannstm_, w);
                 variablesInScope.pop();
-                System.out.println("Done continuations for " + name);
+                //System.out.println("Done continuations for " + name);
                 variablesInScope.clear();
 
                 w.endMethod();
@@ -700,6 +723,7 @@ public class ScalaVisitor {
 
                 }
                 currentMethodLabels.clear();
+                currentMethod=null;
 
                 w.emitEmptyLine();
             }
@@ -710,18 +734,25 @@ public class ScalaVisitor {
     }
 
     public void visit(ClassDecl cpi, ScalaWriter w) {
+        //TODO looke at new first then do cpi.getAnnotationList() look ABS.Scheduler.Scheduler. If it exists, cast to FnApp, and then apply it.
         try {
+            hasRun=false;
             final String className = dataCollisions.containsKey(cpi.getName()) ? dataCollisions.get(cpi.getName())
                     : cpi.getName();
             LinkedList<String> parameters = new LinkedList<>();
-            parameters.add("LocalActor");
+            parameters.add(ABS_API_ACTOR_CLASS);
             parameters.add("destCOG");
+
+            parameters.add(ABS_API_INTERFACE_CLASS);
+            parameters.add("destDC");
+
 
             if (cpi.hasParam()) {
                 for (ParamDecl param : cpi.getParams()) {
                     StringWriter typesw = new StringWriter();
                     ScalaWriter tw = new ScalaWriter(typesw);
                     param.getAccess().accept(this, tw);
+
 
                     String fieldType = typesw.toString();
                     parameters.add(fieldType);
@@ -737,13 +768,47 @@ public class ScalaVisitor {
 
             w.emitEmptyLine();
 
-            // emitImplicitConversions(w);
+            emitImplicitConversions(w);
 
             for (FieldDecl cb : cpi.getFieldList()) {
                 cb.accept(this, w);
             }
+
+
+
             for (MethodImpl cb : cpi.getMethods()) {
+
                 cb.accept(this, w);
+            }
+
+            w.beginConstructor();
+            w.emitStatement("%s(%s)", MOVE_TO_COG, parameters.get(1));
+            w.emitStatement("%s(%s)", SET_DC, parameters.get(3));
+
+            if (cpi.hasInitBlock()) {
+                InitBlock ib = cpi.getInitBlock();
+                ib.accept(this,w);
+            }
+            if(hasRun)
+                w.emitStatement("%s.%s(()=>%s.run())", LITERAL_THIS, "send", LITERAL_THIS);
+            hasRun=false;
+            w.endConstructor();
+
+            if(!w.checkAwaits) {
+                for (InterfaceTypeUse itu :
+                        cpi.getImplementedInterfaceUses()) {
+                    InterfaceType it = (InterfaceType) itu.getType();
+                    for (MethodSig sig :
+                            it.getAllMethodSigs()) {
+                        String qname = cpi.getModuleDecl().getName() + "." + cpi.getName();
+                        if (checkAwait(sig.getName(), qname)) {
+                            String key = cpi.getModuleDecl().getName() + "." + it.getSimpleName() + "." + sig.getName();
+                            System.out.println(key);
+                            programMethods.get(key).setContainsAwait(true);
+                        }
+                    }
+                }
+
             }
             w.emitEmptyLine();
             // emitToStringMethod(w);
@@ -751,12 +816,6 @@ public class ScalaVisitor {
                 w.emit(continuation.toString());
             }
 
-            w.beginConstructor();
-            w.emitStatement("moveToCOG(%s)", parameters.get(1));
-            if (cpi.hasInitBlock()) {
-                cpi.getInitBlock().accept(this, w);
-            }
-            w.endConstructor();
 
             w.emitEmptyLine();
             w.endType();
@@ -775,6 +834,11 @@ public class ScalaVisitor {
             p.getAccess().accept(this, mtw);
 
             String fieldType = mtsw.toString();
+            if(p.getName().equals("exclusion")) {
+                System.out.println(p.getAccess() + " exclusion");
+                System.out.println(javaTypeTranslator.abstractTypes);
+            }
+
             String fieldName = javaTypeTranslator.translateKeyword(p.getName());
 
             if (p.hasInitExp()) {
@@ -825,7 +889,8 @@ public class ScalaVisitor {
                         beginElementKind(w, ElementKind.OTHER, constrIdent.getName() + OF, DEFAULT_MODIFIERS,
                                 parentDataInterface, null, new ArrayList<>(), false);
                     } else
-                        beginElementKind(w, ElementKind.OTHER, constrIdent.getName(), DEFAULT_MODIFIERS,
+
+                    beginElementKind(w, ElementKind.OTHER, constrIdent.getName(), DEFAULT_MODIFIERS,
                                 parentDataInterface, null, new ArrayList<>(), false);
 
                     emitField(w, "Int", "rank", String.valueOf(rank++), true);
@@ -866,9 +931,7 @@ public class ScalaVisitor {
                              * "p"); functionsWriter.endControlFlow();
                              * functionsWriter.endMethod();
                              */
-                        }
-
-                        else {
+                        } else {
                             if (ctType.contains("["))
                                 parameters.add(ctType.substring(0, ctType.indexOf('[')).toLowerCase() + counter++);
                             else
@@ -998,9 +1061,7 @@ public class ScalaVisitor {
                             // functionsWriter.endControlFlow();
                             // functionsWriter.endMethod();
 
-                        }
-
-                        else {
+                        } else {
                             if (ctType.contains("["))
                                 parameters.add(ctType.substring(0, ctType.indexOf('[')).toLowerCase() + counter++);
                             else
@@ -1069,14 +1130,26 @@ public class ScalaVisitor {
                 }
 
             }
+            FunctionDef fbody = functionDecl.getFunctionDef();
+            if (fbody instanceof BuiltinFunctionDef) {
+                if (methodName.equals("thisDC")) {
+                    parameters.add(ABS_API_ACTOR_CLASS);
+                    parameters.add(ABS_API_ACTOR_CLASS.toLowerCase());
+
+                }
+            }
             Set<Modifier> modifiers = Sets.newHashSet(Modifier.PUBLIC, Modifier.STATIC);
 
             w.beginMethod(methodType, methodName, modifiers, parameters.toArray(new String[0]));
             createMethodDefinition(methodType, methodName, parameters);
-            FunctionDef fbody = functionDecl.getFunctionDef();
-            if (fbody instanceof BuiltinFunctionDef) {
-                logNotImplemented("builtin function body: %s %s", methodType, methodName);
-            } else if (fbody instanceof ExpFunctionDef) {
+
+            if(fbody instanceof BuiltinFunctionDef){
+                if(methodName.equals("thisDC")){
+                    w.emitStatement("return %s.%s.%s[%s]", ABS_API_ACTOR_CLASS.toLowerCase(),GET_DC, INSTANCE_OF, DEPLOYMENT_COMPONENT);
+                }
+
+            }
+            else if (fbody instanceof ExpFunctionDef) {
                 ExpFunctionDef nfb = (ExpFunctionDef) fbody;
                 abs.frontend.ast.PureExp pe = nfb.getRhs();
 
@@ -1131,6 +1204,15 @@ public class ScalaVisitor {
                 }
 
             }
+
+            FunctionDef fbody = functionDecl.getFunctionDef();
+            if (fbody instanceof BuiltinFunctionDef) {
+                if (methodName.equals("thisDC")) {
+                    parameters.add(ABS_API_ACTOR_CLASS);
+                    parameters.add(ABS_API_ACTOR_CLASS.toLowerCase());
+
+                }
+            }
             Set<Modifier> modifiers = Sets.newHashSet(Modifier.PUBLIC, Modifier.STATIC);
             List<String> generics = new LinkedList<>();
             List<String> genericsNames = new LinkedList<>();
@@ -1141,9 +1223,11 @@ public class ScalaVisitor {
             }
             w.beginMethod(methodType, methodName + (generics.isEmpty() ? "" : generics), modifiers,
                     parameters.toArray(new String[0]));
-            FunctionDef fbody = functionDecl.getFunctionDef();
-            if (fbody instanceof BuiltinFunctionDef) {
-                logNotImplemented("builtin function body: %s %s", methodType, methodName);
+            if(fbody instanceof BuiltinFunctionDef){
+                if(methodName.equals("thisDC")){
+                    w.emitStatement("return %s.%s.%s[%s]", ABS_API_ACTOR_CLASS.toLowerCase(),GET_DC, INSTANCE_OF, DEPLOYMENT_COMPONENT);
+                }
+
             } else if (fbody instanceof ExpFunctionDef) {
                 ExpFunctionDef nfb = (ExpFunctionDef) fbody;
                 abs.frontend.ast.PureExp pe = nfb.getRhs();
@@ -1243,10 +1327,9 @@ public class ScalaVisitor {
         label.append(currentMethod.getName());
 
         if (!w.isScope && !w.checkAwaits) {
-            label.append("Await" + (awaitCounter++));
+            label.append("Await" + (awaitCounter));
         }
 
-        String methodCall = generateContinuationMethodInvocation("this", label.toString(), w, 'w', awaitCounter);
         try {
             if (auxsw.toString().contains("new Supplier"))
                 w.beginControlFlow("if(%s.get())", auxsw.toString());
@@ -1254,10 +1337,14 @@ public class ScalaVisitor {
                 w.beginControlFlow("if(%s(0)<=0)", auxsw.toString());
             else
                 w.beginControlFlow("if(%s.isDone())", auxsw.toString());
-            w.emitStatement("return %s", methodCall);
+            w.emitStatement("return %s", generateContinuationMethodInvocation("this", label.toString(), w, 'w', awaitCounter, false));
             w.endControlFlow();
             w.beginControlFlow("else");
-            w.emitStatement("return spawn(Guard.convert(%s),%s)", auxsw.toString(), "()=>" + methodCall);
+            w.emitStatement("return spawn(Guard.convert(%s),%s)", auxsw.toString(), "()=>" + generateContinuationMethodInvocation("this", label.toString(), w, 'w', awaitCounter, true)
+            );
+            if (!w.isScope && !w.checkAwaits) {
+                awaitCounter++;
+            }
             w.avoiddc = true;
             w.endControlFlow();
 
@@ -1338,6 +1425,7 @@ public class ScalaVisitor {
             String varName = javaTypeTranslator.translateKeyword(varDeclStmt.getVarDecl().getName());
             VarDefinition vd = createVarDefinition(varName, varType);
 
+
             if ((w.continuationLevel > -1 || w.avoidDuplicates)) {
                 // System.out.println(varName + " " + "w_" + awaitCounter + "$"
                 // + varName);
@@ -1354,8 +1442,11 @@ public class ScalaVisitor {
                             if (expe instanceof SyncCall) {
                                 SyncCall smc = (SyncCall) expe;
                                 String methodName = smc.getMethod().equals(METHOD_GET) ? "get" : smc.getMethod();
-                                if (!callHasAwait(methodName))
+                                String calleeid = getCalleeId(smc, new ScalaWriter(new StringWriter()));
+
+                                if (!callHasAwait(smc, methodName) && calleeid.equals(LITERAL_THIS)) {
                                     variablesInScope.peek().add(vd);
+                                }
 
                             } else
                                 variablesInScope.peek().add(vd);
@@ -1365,8 +1456,6 @@ public class ScalaVisitor {
 
                 }
 
-                if (varName.equals("last"))
-                    System.out.println("vdstmt " + variablesInScope);
 
                 if (exp instanceof EffExp == false) {
                     fromInit = true;
@@ -1380,6 +1469,13 @@ public class ScalaVisitor {
                     } else if (expe instanceof SyncCall) {
                         SyncCall smc = (SyncCall) expe;
                         visitSyncMethodCall_Sync(smc, varType, varName, false, w);
+                        String methodName = smc.getMethod().equals(METHOD_GET) ? "get" : smc.getMethod();
+                        if (callHasAwait(smc, methodName) || !getCalleeId(smc, new ScalaWriter(new StringWriter())).equals(LITERAL_THIS)) {
+                            if (!variablesInScope.isEmpty()) {
+                                variablesInScope.peek().add(vd);
+                            }
+                        }
+
                     } else if (expe instanceof GetExp) {
                         GetExp g = (GetExp) expe;
                         varName = getDuplicate(varName, w);
@@ -1501,7 +1597,84 @@ public class ScalaVisitor {
         }
     }
 
+    public void visit(InitBlock b, ScalaWriter w) {
+        try {
+            if (w.checkAwaits) {
+
+
+                String returnType = String.format("%s[%s]", ABSFUTURE_CLASS, "Void");
+                String name = CONSTRUCTOR;
+                List<String> parameterTypes = new ArrayList<>();
+                createMethodDefinition(returnType, name, parameterTypes);
+                visitMethodBody(b,w);
+            } else {
+
+                variablesInScope.clear();
+                TreeSet<VarDefinition> methodScope = new TreeSet<>();
+                variablesInScope.push(methodScope);
+                String returnType = String.format("%s[%s]", ABSFUTURE_CLASS, "Void");
+                String name = CONSTRUCTOR;
+                List<String> parameterTypes = new ArrayList<>();
+                createMethodDefinition(returnType, name, parameterTypes);
+
+                abs.frontend.ast.List<Stmt> copyOfMcb = b.getStmts();
+
+                TreeSet<VarDefinition> blockScope = new TreeSet<>();
+                variablesInScope.push(blockScope);
+
+                awaitCounter = 0;
+                asyncPCounter = 0;
+                syncPCounter = 0;
+
+                w.avoiddc = false;
+
+                //System.out.println("Building method for " + name);
+                fromConstructor=true;
+                for (Stmt annStm : b.getStmts()) {
+                    if (!w.avoiddc)
+                        annStm.accept(this, w);
+
+                }
+                fromConstructor=false;
+                if(!w.avoiddc)
+                    w.emitStatement("%s =  %s.done()",CONS_FUT, ABSFUTURE_CLASS);
+                w.avoiddc = false;
+
+                //System.out.println("Done method for " + name);
+
+
+
+                variablesInScope.pop();
+
+                awaitCounter = 0;
+                asyncPCounter = 0;
+                syncPCounter = 0;
+
+                System.out.println("Building continuations for " + name);
+                continuation(copyOfMcb, new LinkedList<>(), true);
+                // visitStatementsBlock(mcb.listannstm_, w);
+                variablesInScope.pop();
+                System.out.println("Done continuations for " + name);
+                variablesInScope.clear();
+
+
+                for (StringWriter stringWriter : currentMethodLabels) {
+                    labelMap.get(this.classes.peek()).add(stringWriter);
+
+                }
+                currentMethodLabels.clear();
+                currentMethod=null;
+
+                w.emitEmptyLine();
+            }
+
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     public void visit(Block b, ScalaWriter w) {
+
         TreeSet<VarDefinition> blockScope = new TreeSet<>();
         variablesInScope.push(blockScope);
         if (w.continuationLevel != -5)
@@ -1527,7 +1700,12 @@ public class ScalaVisitor {
         StringWriter scopesw = new StringWriter();
         ScalaWriter scopew = new ScalaWriter(scopesw);
         for (Stmt stm : b.getStmts()) {
-            if(!w.avoiddc)
+            //TODO: stm.getAnnotationList(), check for "ABS.DC.COST"
+            //TODO: if cost is not null, decrement available cost, if > 0 continue, else decrement all, and tell the DC that I need more.
+            //TODO: thisDC has to be generated spearately by the Builtin visitor node.
+            //TODO:
+
+            if (!w.avoiddc)
                 stm.accept(this, w);
             else
                 stm.accept(this, scopew);
@@ -1575,7 +1753,7 @@ public class ScalaVisitor {
             maxw.duplicateReplacements = w.duplicateReplacements;
             e.getMax().accept(this, maxw);
 
-            w.emit(String.format("Array(%s,%s)", minsw, maxsw));
+            w.emit(String.format("Array(%s.toInt,%s.toInt)", minsw, maxsw));
 
         } catch (IOException ex) {
             // TODO Auto-generated catch block
@@ -1661,6 +1839,19 @@ public class ScalaVisitor {
 
     public void visit(NewExp n, ScalaWriter w) {
         try {
+            //TODO: CompilerUtils.findstatementfor expression (GenerateErlang.jadd l330)
+            //TODO: stmt.getAnnotations (ABS.DC.DC)
+            //TODO: if there's no dc annotation, use the current one
+            //TODO: if a DC is specified, parse a pureExp, assign a parsed DC to the new COG.
+            //TODO: n.getType().isDeploymentComponentType()
+
+            Stmt stmt = CompilerUtils.findStmtForExpression(n);
+            PureExp dc = CompilerUtils.getAnnotationValueFromName(stmt.getAnnotations(), "ABS.DC.DC");
+            boolean isNewDC = n.getType().isDeploymentComponentType();
+
+
+
+
             List<String> parameters = new ArrayList<>();
             String name = dataCollisions.containsKey(n.getClassName()) ? dataCollisions.get(n.getClassName())
                     : n.getClassName();
@@ -1674,18 +1865,70 @@ public class ScalaVisitor {
             }
             String parametersString = String.join(COMMA_SPACE, parameters);
             if (n.hasLocal()) {
-                w.emit("new " + name + "(this " + (parametersString.length() == 0 ? "" : ", ") + parametersString
+                w.emit("new " + name + "(this, getDc() " + (parametersString.length() == 0 ? "" : ", ") + parametersString
                         + ")");
             } else {
-                w.emit("new " + name + "(null " + (parametersString.length() == 0 ? "" : ", ") + parametersString
+                if(isNewDC)
+                    w.emit("new " + name + "(null, null " + (parametersString.length() == 0 ? "" : ", ") + parametersString
+                            + ")");
+                else{
+                    if(dc==null)
+                        w.emit("new " + name + "(null, getDc() " + (parametersString.length() == 0 ? "" : ", ") + parametersString
                         + ")");
+                    else {
+                        StringWriter dcsw = new StringWriter();
+                        ScalaWriter dcw = new ScalaWriter(dcsw);
+                        dcw.continuationLevel = w.continuationLevel;
+                        dcw.duplicateReplacements = w.duplicateReplacements;
+                        dc.accept(this, dcw);
+
+                        w.emit("new " + name + "(null, " + dcsw.toString()+ ", " + (parametersString.length() == 0 ? "" : ", ") + parametersString
+                                + ")");
+                    }
+                }
             }
+
+            /*
+            String qname = n.getType().getQualifiedName();
+            if(checkAwait(CONSTRUCTOR,qname)) {
+
+                StringBuilder label = new StringBuilder(classes.peek());
+                label.append(currentMethod.getName());
+
+                if (!w.isScope && !w.checkAwaits) {
+                    label.append("Await" + (awaitCounter));
+                }
+
+                StringBuilder valueName = new StringBuilder("unusedValue");
+
+                if (!w.isScope && !w.checkAwaits) {
+                    label.append("Await" + (awaitCounter));
+                }
+
+                String methodCall = generateContinuationMethodInvocation("this", label.toString(), w, 'w', awaitCounter, true);
+                try {
+                    //w.emitStatement("var %s: %s=>%s = (%s)=>%s", label + "m", type, currentMethod.type(), valueName,
+                    //       methodCall);
+                    w.emitStatement("getSpawn(%s.%s, (%s)=>%s, %s.HIGH_PRIORITY, false)", varName, GET_CONSTRUCTOR_FUTURE, valueName, methodCall
+                            ABS_API_INTERFACE_CLASS);
+                    w.avoiddc = true;
+                    if (!w.isScope && !w.checkAwaits) {
+                        awaitCounter++;
+                    }
+                } catch (IOException e) {
+                    // TODO Auto-generated catch block
+                    e.printStackTrace();
+                }
+            }*/
+
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
     }
 
     public void visit(GetExp g, ScalaWriter w) {
+
+
         if (w.checkAwaits && !currentMethod.containsAwait()) {
             currentMethod.setContainsAwait(true);
             awaitsDetected = true;
@@ -1704,13 +1947,13 @@ public class ScalaVisitor {
 
         if (!auxsw.toString().contains("tmp")) {
 
-            StringBuilder valueName = new StringBuilder("unusedValue");
+            StringBuilder valueName = new StringBuilder("unusedValue: Void");
 
             StringBuilder label = new StringBuilder(classes.peek());
             label.append(currentMethod.getName());
 
             if (!w.isScope && !w.checkAwaits) {
-                label.append("Await" + (awaitCounter++));
+                label.append("Await" + (awaitCounter));
             }
 
             List<String> parameters = new ArrayList<>();
@@ -1719,13 +1962,17 @@ public class ScalaVisitor {
                     parameters.add(varDefinition.getName());
                 }
             }
-            String methodCall = generateContinuationMethodInvocation("this", label.toString(), w, 'w', awaitCounter);
+            String methodCall = generateContinuationMethodInvocation("this", label.toString(), w, 'w', awaitCounter, true);
+
             try {
                 w.emitStatement("var %s: %s=>%s = (%s)=>%s", label + "m", type, currentMethod.type(), valueName,
                         methodCall);
                 w.emitStatement("return getSpawn(%s, %s, %s.HIGH_PRIORITY, true)", auxsw.toString(), label + "m",
                         ABS_API_INTERFACE_CLASS);
                 w.avoiddc = true;
+                if (!w.isScope && !w.checkAwaits) {
+                    awaitCounter++;
+                }
             } catch (IOException e) {
                 // TODO Auto-generated catch block
                 e.printStackTrace();
@@ -1771,60 +2018,56 @@ public class ScalaVisitor {
                     parameters.add(psw.toString());
                 }
 
-                // List<String> polyC = polyTypeConstructs.get(functionName);
-                // String result = "";
-                // if (fromEquals)
-                // if (equalsType != null && equalsType.contains("["))
-                // result = String.format("%s%s(%s)", functionName,
-                // equalsType.substring(equalsType.indexOf("[")) +
-                // String.join(COMMA_SPACE, parameters));
-                // else
-                // result = String.format("%s(%s)", functionName,
-                // String.join(COMMA_SPACE, parameters));
-                // else
+
                 String result = String.format("%s(%s)", functionName, String.join(COMMA_SPACE, parameters));
                 fromInit = tmp;
                 w.emit(result);
             } else {
-                // final boolean isException =
-                // this.exceptionDeclaraions.contains(type);
+
                 String resolvedType = javaTypeTranslator.translateFunctionalType(functionName);
                 resolvedType = translateDataColl(resolvedType);
-                // final boolean isData = resolvedType != null &&
-                // this.dataDeclarations.containsKey(type);
-                // if (isException) {
-                // w.emit("new " + type + "()");
-                // } else {
-                // String refinedType = getRefindDataDeclName(resolvedType);
+
                 String terminator = resolvedType.equals("false") || resolvedType.equals("true")
                         || resolvedType.equals("None") ? "" : "()";
                 // List<String> polyC = polyTypeConstructs.get(refinedType);
-                if (fromEquals) {
+                if (fromEquals || fromInit) {
 
                     StringWriter psw = new StringWriter();
                     ScalaWriter tw = new ScalaWriter(psw);
-                    String varType = null;
+                    List<Type> argList = null;
                     Type t = cons.getType();
                     if (t.isDataType()) {
                         DataTypeType dt = (DataTypeType) t;
-                        varType = dt.getTypeArgs().toString();
-                    }
-                    if (varType != null && varType.contains("[") && varType.length() > 2) {
-                        StringBuilder genType = new StringBuilder(varType.substring(varType.indexOf("[")));
-                        for (int a = 0; a < genType.length(); a++) {
-                            if (genType.charAt(a) == '<')
-                                genType.replace(a, a + 1, "[");
-                            if (genType.charAt(a) == '>')
-                                genType.replace(a, a + 1, "]");
+                        argList = dt.getTypeArgs();
 
+                    }
+                    if (argList != null && !argList.isEmpty()) {
+                        StringBuilder genType = new StringBuilder("[");
+                        for (Type arg : argList
+                                ) {
+                            StringWriter argsw = new StringWriter();
+                            if (arg.toUse() != null) {
+                                arg.toUse().accept(this, new ScalaWriter(argsw));
+                                genType.append(argsw.toString() + ",");
+                            } else if (arg.isBoundedType()) {
+                                Type bt = ((BoundedType) arg).getBoundType();
+                                if(bt!=null && bt.toUse()!=null) {
+                                    bt.toUse().accept(this, new ScalaWriter(argsw));
+                                    genType.append(argsw.toString() + ",");
+                                }
+
+                            } else {
+                                genType.append(arg.getSimpleName() + ",");
+                            }
                         }
-                        w.emit(resolvedType + genType + terminator);
+                        int x = genType.lastIndexOf(",");
+                        if (x > -1)
+                            genType.replace(x, x + 1, "]");
+                        if (genType.length() > 1)
+                            w.emit(resolvedType + genType + terminator);
+                        else
+                            w.emit(resolvedType + terminator);
                     } else
-                        w.emit(resolvedType + terminator);
-                } else if (fromInit) {
-                    if (initType != null && initType.contains("["))
-                        w.emit(resolvedType + initType.substring(initType.indexOf("[")) + terminator);
-                    else
                         w.emit(resolvedType + terminator);
                 } else
                     w.emit(resolvedType + terminator);
@@ -1832,6 +2075,10 @@ public class ScalaVisitor {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    public void visit(ParFnApp cons, ScalaWriter w) {
+
     }
 
     public void visit(FnApp cons, ScalaWriter w) {
@@ -1855,7 +2102,8 @@ public class ScalaVisitor {
             if (cons.hasParam()) {
                 w.emit(String.join(COMMA_SPACE, parameters));
             }
-            w.emit(")" + (functionName.equals("toString") ? ".toString()" : ""));
+            w.emit(functionName.equals("thisDC") ? "this" : ""+
+                    ")" + (functionName.equals("toString") ? ".toString()" : ""));
 
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -1864,6 +2112,8 @@ public class ScalaVisitor {
 
     public void visit(IfExp p, ScalaWriter w) {
         try {
+            w.beginExpressionGroup();
+
             StringWriter sw = new StringWriter();
             ScalaWriter w1 = new ScalaWriter(sw);
             w1.continuationLevel = w.continuationLevel;
@@ -1886,6 +2136,7 @@ public class ScalaVisitor {
             String right = sw.toString();
 
             w.emit(String.format("if (%s)  %s else %s", condition, left, right));
+            w.endExpressionGroup();
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -1893,6 +2144,7 @@ public class ScalaVisitor {
 
     public void visit(LetExp e, ScalaWriter w) {
         try {
+            w.beginExpressionGroup();
             StringWriter typesw = new StringWriter();
             ScalaWriter tw = new ScalaWriter(typesw);
 
@@ -1915,6 +2167,7 @@ public class ScalaVisitor {
             String right = sw.toString();
 
             w.emit(String.format("{val %s:%s = %s\n  %s}", name, type, assign, right));
+            w.endExpressionGroup();
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
@@ -1922,6 +2175,7 @@ public class ScalaVisitor {
 
     public void visit(CaseExp p, ScalaWriter w) {
         try {
+            w.beginExpressionGroup();
             StringWriter auxsw = new StringWriter();
             ScalaWriter auxw = new ScalaWriter(auxsw);
             auxw.continuationLevel = w.continuationLevel;
@@ -1954,6 +2208,7 @@ public class ScalaVisitor {
             }
 
             w.endControlFlow();
+            w.endExpressionGroup();
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -2036,9 +2291,7 @@ public class ScalaVisitor {
                 }
                 String params = String.join(COMMA_SPACE, parameters);
                 w.emit(name + "(" + params + ")");
-            }
-
-            else {
+            } else {
                 String terminator = name.equals("false") || name.equals("true") || name.equals("None") ? "" : "()";
                 w.emit(name + terminator);
             }
@@ -2070,6 +2323,14 @@ public class ScalaVisitor {
         }
     }
 
+    public void visit(FloatLiteral p, ScalaWriter w) {
+        try {
+            w.emit(Float.toString(Float.valueOf(p.getContent())));
+        } catch (IOException x) {
+            throw new RuntimeException(x);
+        }
+    }
+
     public void visit(StringLiteral s, ScalaWriter w) {
         try {
 
@@ -2085,9 +2346,38 @@ public class ScalaVisitor {
     public void visit(MinusExp e, ScalaWriter w) {
         try {
             w.beginExpressionGroup();
-            w.emit(" - ");
-            e.getOperand().accept(this, w);
-            w.endExpressionGroup();
+            Type t = e.getType();
+            Type lt = e.getOperand().getType();
+            StringWriter lsw = new StringWriter();
+            ScalaWriter lw = new ScalaWriter(lsw);
+            lw.continuationLevel = w.continuationLevel;
+            lw.duplicateReplacements = w.duplicateReplacements;
+            e.getOperand().accept(this,lw);
+            if(t.getQualifiedName().contains("Rat")) {
+                if(lt.getQualifiedName().contains("Int")){
+                    w.emit(String.format(" - new Rational(%s)", lsw));
+                }
+                else {
+                    w.emit(" - ");
+                    e.getOperand().accept(this, w);
+                }
+            }
+            else{
+                /*if(lt.getQualifiedName().contains("Int")){
+                    if(rt.getQualifiedName().contains("Int"))
+                        w.emit(String.format("new Rational(%s,%s)", lsw,rsw));
+                        else
+                        w.emit(String.format("new Rational(%s)/%s", lsw,rsw));
+                }
+                else{
+                    if(rt.getQualifiedName().contains("Int"))
+                        w.emit(String.format("%s/new Rational(%s)", lsw,rsw));
+                    else
+                        w.emit(String.format("%s/%s", lsw,rsw));
+                }*/
+                w.emit(" - ");
+                e.getOperand().accept(this, w);
+            }w.endExpressionGroup();
         } catch (IOException x) {
             throw new RuntimeException(x);
         }
@@ -2109,9 +2399,46 @@ public class ScalaVisitor {
     public void visit(MultMultExp e, ScalaWriter w) {
         try {
             w.beginExpressionGroup();
-            e.getLeft().accept(this, w);
-            w.emit(" * ");
-            e.getRight().accept(this, w);
+            Type t = e.getType();
+            Type lt = e.getLeft().getType();
+            Type rt = e.getRight().getType();
+            StringWriter lsw = new StringWriter();
+            ScalaWriter lw = new ScalaWriter(lsw);
+            lw.continuationLevel = w.continuationLevel;
+            lw.duplicateReplacements = w.duplicateReplacements;
+            StringWriter rsw = new StringWriter();
+            ScalaWriter rw = new ScalaWriter(rsw);
+            rw.continuationLevel = w.continuationLevel;
+            rw.duplicateReplacements = w.duplicateReplacements;
+            e.getLeft().accept(this,lw);
+            e.getRight().accept(this, rw);
+            if(t.getQualifiedName().contains("Rat")) {
+                if(lt.getQualifiedName().contains("Int")){
+                    w.emit(String.format("new Rational(%s)*%s", lsw,rsw));
+                }
+                else {
+                    e.getLeft().accept(this, w);
+                    w.emit(" * ");
+                    e.getRight().accept(this, w);
+                }
+            }
+            else{
+                /*if(lt.getQualifiedName().contains("Int")){
+                    if(rt.getQualifiedName().contains("Int"))
+                        w.emit(String.format("new Rational(%s,%s)", lsw,rsw));
+                        else
+                        w.emit(String.format("new Rational(%s)/%s", lsw,rsw));
+                }
+                else{
+                    if(rt.getQualifiedName().contains("Int"))
+                        w.emit(String.format("%s/new Rational(%s)", lsw,rsw));
+                    else
+                        w.emit(String.format("%s/%s", lsw,rsw));
+                }*/
+                e.getLeft().accept(this, w);
+                w.emit(" * ");
+                e.getRight().accept(this, w);
+            }
             w.endExpressionGroup();
         } catch (IOException x) {
             throw new RuntimeException(x);
@@ -2122,9 +2449,46 @@ public class ScalaVisitor {
     public void visit(DivMultExp e, ScalaWriter w) {
         try {
             w.beginExpressionGroup();
-            e.getLeft().accept(this, w);
-            w.emit(" / ");
-            e.getRight().accept(this, w);
+            Type t = e.getType();
+            Type lt = e.getLeft().getType();
+            Type rt = e.getRight().getType();
+            StringWriter lsw = new StringWriter();
+            ScalaWriter lw = new ScalaWriter(lsw);
+            lw.continuationLevel = w.continuationLevel;
+            lw.duplicateReplacements = w.duplicateReplacements;
+            StringWriter rsw = new StringWriter();
+            ScalaWriter rw = new ScalaWriter(rsw);
+            rw.continuationLevel = w.continuationLevel;
+            rw.duplicateReplacements = w.duplicateReplacements;
+            e.getLeft().accept(this,lw);
+            e.getRight().accept(this, rw);
+            if(t.getQualifiedName().contains("Rat")) {
+                if(lt.getQualifiedName().contains("Int")){
+                    w.emit(String.format("new Rational(%s)/%s", lsw,rsw));
+                }
+                else {
+                    e.getLeft().accept(this, w);
+                    w.emit(" / ");
+                    e.getRight().accept(this, w);
+                }
+            }
+            else{
+                /*if(lt.getQualifiedName().contains("Int")){
+                    if(rt.getQualifiedName().contains("Int"))
+                        w.emit(String.format("new Rational(%s,%s)", lsw,rsw));
+                        else
+                        w.emit(String.format("new Rational(%s)/%s", lsw,rsw));
+                }
+                else{
+                    if(rt.getQualifiedName().contains("Int"))
+                        w.emit(String.format("%s/new Rational(%s)", lsw,rsw));
+                    else
+                        w.emit(String.format("%s/%s", lsw,rsw));
+                }*/
+                e.getLeft().accept(this, w);
+                w.emit(" / ");
+                e.getRight().accept(this, w);
+            }
             w.endExpressionGroup();
         } catch (IOException x) {
             throw new RuntimeException(x);
@@ -2148,9 +2512,46 @@ public class ScalaVisitor {
     public void visit(AddAddExp e, ScalaWriter w) {
         try {
             w.beginExpressionGroup();
-            e.getLeft().accept(this, w);
-            w.emit(" + ");
-            e.getRight().accept(this, w);
+            Type t = e.getType();
+            Type lt = e.getLeft().getType();
+            Type rt = e.getRight().getType();
+            StringWriter lsw = new StringWriter();
+            ScalaWriter lw = new ScalaWriter(lsw);
+            lw.continuationLevel = w.continuationLevel;
+            lw.duplicateReplacements = w.duplicateReplacements;
+            StringWriter rsw = new StringWriter();
+            ScalaWriter rw = new ScalaWriter(rsw);
+            rw.continuationLevel = w.continuationLevel;
+            rw.duplicateReplacements = w.duplicateReplacements;
+            e.getLeft().accept(this,lw);
+            e.getRight().accept(this, rw);
+            if(t.getQualifiedName().contains("Rat")) {
+                if(lt.getQualifiedName().contains("Int")){
+                    w.emit(String.format("new Rational(%s) + %s", lsw,rsw));
+                }
+                else {
+                    e.getLeft().accept(this, w);
+                    w.emit(" + ");
+                    e.getRight().accept(this, w);
+                }
+            }
+            else{
+                /*if(lt.getQualifiedName().contains("Int")){
+                    if(rt.getQualifiedName().contains("Int"))
+                        w.emit(String.format("new Rational(%s,%s)", lsw,rsw));
+                        else
+                        w.emit(String.format("new Rational(%s)/%s", lsw,rsw));
+                }
+                else{
+                    if(rt.getQualifiedName().contains("Int"))
+                        w.emit(String.format("%s/new Rational(%s)", lsw,rsw));
+                    else
+                        w.emit(String.format("%s/%s", lsw,rsw));
+                }*/
+                e.getLeft().accept(this, w);
+                w.emit(" + ");
+                e.getRight().accept(this, w);
+            }
             w.endExpressionGroup();
         } catch (IOException x) {
             throw new RuntimeException(x);
@@ -2161,14 +2562,78 @@ public class ScalaVisitor {
     public void visit(SubAddExp e, ScalaWriter w) {
         try {
             w.beginExpressionGroup();
-            e.getLeft().accept(this, w);
-            w.emit(" - ");
-            e.getRight().accept(this, w);
+            Type t = e.getType();
+            Type lt = e.getLeft().getType();
+            Type rt = e.getRight().getType();
+            StringWriter lsw = new StringWriter();
+            ScalaWriter lw = new ScalaWriter(lsw);
+            lw.continuationLevel = w.continuationLevel;
+            lw.duplicateReplacements = w.duplicateReplacements;
+            StringWriter rsw = new StringWriter();
+            ScalaWriter rw = new ScalaWriter(rsw);
+            rw.continuationLevel = w.continuationLevel;
+            rw.duplicateReplacements = w.duplicateReplacements;
+            e.getLeft().accept(this,lw);
+            e.getRight().accept(this, rw);
+            if(t.getQualifiedName().contains("Rat")) {
+                if(lt.getQualifiedName().contains("Int")){
+                    w.emit(String.format("new Rational(%s) - %s", lsw,rsw));
+                }
+                else {
+                    e.getLeft().accept(this, w);
+                    w.emit(" - ");
+                    e.getRight().accept(this, w);
+                }
+            }
+            else{
+                /*if(lt.getQualifiedName().contains("Int")){
+                    if(rt.getQualifiedName().contains("Int"))
+                        w.emit(String.format("new Rational(%s,%s)", lsw,rsw));
+                        else
+                        w.emit(String.format("new Rational(%s)/%s", lsw,rsw));
+                }
+                else{
+                    if(rt.getQualifiedName().contains("Int"))
+                        w.emit(String.format("%s/new Rational(%s)", lsw,rsw));
+                    else
+                        w.emit(String.format("%s/%s", lsw,rsw));
+                }*/
+                e.getLeft().accept(this, w);
+                w.emit(" - ");
+                e.getRight().accept(this, w);
+            }
             w.endExpressionGroup();
         } catch (IOException x) {
             throw new RuntimeException(x);
         }
 
+    }
+
+    public void constructList(List<PureExp> rest, ScalaWriter w) throws IOException {
+        if (rest.isEmpty())
+            w.emit("Nil()");
+        else {
+            w.emit("Cons");
+            w.beginExpressionGroup();
+            PureExp element = rest.remove(0);
+            element.accept(this, w);
+            w.emit(", ");
+            constructList(rest, w);
+            w.endExpressionGroup();
+        }
+    }
+
+    public void visit(ListLiteral e, ScalaWriter w) {
+        try {
+            List<PureExp> contents = new LinkedList<>();
+            for (PureExp element : e.getPureExpList()
+                    ) {
+                contents.add(element);
+            }
+            constructList(contents, w);
+        } catch (IOException x) {
+            throw new RuntimeException(x);
+        }
     }
 
     public void visit(AndBoolExp e, ScalaWriter w) {
@@ -2200,9 +2665,38 @@ public class ScalaVisitor {
     public void visit(LTExp e, ScalaWriter w) {
         try {
             w.beginExpressionGroup();
-            e.getLeft().accept(this, w);
-            w.emit(" < ");
-            e.getRight().accept(this, w);
+            Type t = e.getType();
+            Type lt = e.getLeft().getType();
+            Type rt = e.getRight().getType();
+            //if(!t.getQualifiedName().contains("Rat")) {
+                e.getLeft().accept(this, w);
+                w.emit(" < ");
+                e.getRight().accept(this, w);
+            /*}
+            else{
+                StringWriter lsw = new StringWriter();
+                ScalaWriter lw = new ScalaWriter(lsw);
+                lw.continuationLevel = w.continuationLevel;
+                lw.duplicateReplacements = w.duplicateReplacements;
+                StringWriter rsw = new StringWriter();
+                ScalaWriter rw = new ScalaWriter(rsw);
+                rw.continuationLevel = w.continuationLevel;
+                rw.duplicateReplacements = w.duplicateReplacements;
+                e.getLeft().accept(this,lw);
+                e.getRight().accept(this, rw);
+                if(lt.getQualifiedName().contains("Int")){
+                    if(rt.getQualifiedName().contains("Int"))
+                        w.emit(String.format("new Rational(%s,%s)", lsw,rsw));
+                    else
+                        w.emit(String.format("new Rational(%s)<%s", lsw,rsw));
+                }
+                else{
+                    if(rt.getQualifiedName().contains("Int"))
+                        w.emit(String.format("%s<new Rational(%s)", lsw,rsw));
+                    else
+                        w.emit(String.format("%s<%s", lsw,rsw));
+                }
+            }*/
             w.endExpressionGroup();
         } catch (IOException x) {
             throw new RuntimeException(x);
@@ -2213,9 +2707,38 @@ public class ScalaVisitor {
     public void visit(GTExp e, ScalaWriter w) {
         try {
             w.beginExpressionGroup();
-            e.getLeft().accept(this, w);
-            w.emit(" > ");
-            e.getRight().accept(this, w);
+            Type t = e.getType();
+            Type lt = e.getLeft().getType();
+            Type rt = e.getRight().getType();
+            //if(!t.getQualifiedName().contains("Rat")) {
+                e.getLeft().accept(this, w);
+                w.emit(" > ");
+                e.getRight().accept(this, w);
+            /*}
+            else{
+                StringWriter lsw = new StringWriter();
+                ScalaWriter lw = new ScalaWriter(lsw);
+                lw.continuationLevel = w.continuationLevel;
+                lw.duplicateReplacements = w.duplicateReplacements;
+                StringWriter rsw = new StringWriter();
+                ScalaWriter rw = new ScalaWriter(rsw);
+                rw.continuationLevel = w.continuationLevel;
+                rw.duplicateReplacements = w.duplicateReplacements;
+                e.getLeft().accept(this,lw);
+                e.getRight().accept(this, rw);
+                if(lt.getQualifiedName().contains("Int")){
+                    if(rt.getQualifiedName().contains("Int"))
+                        w.emit(String.format("new Rational(%s,%s)", lsw,rsw));
+                    else
+                        w.emit(String.format("new Rational(%s)>%s", lsw,rsw));
+                }
+                else{
+                    if(rt.getQualifiedName().contains("Int"))
+                        w.emit(String.format("%s>new Rational(%s)", lsw,rsw));
+                    else
+                        w.emit(String.format("%s>%s", lsw,rsw));
+                }
+            }*/
             w.endExpressionGroup();
         } catch (IOException x) {
             throw new RuntimeException(x);
@@ -2226,9 +2749,38 @@ public class ScalaVisitor {
     public void visit(LTEQExp e, ScalaWriter w) {
         try {
             w.beginExpressionGroup();
-            e.getLeft().accept(this, w);
-            w.emit(" <= ");
-            e.getRight().accept(this, w);
+            Type t = e.getType();
+            Type lt = e.getLeft().getType();
+            Type rt = e.getRight().getType();
+            //if(!t.getQualifiedName().contains("Rat")) {
+                e.getLeft().accept(this, w);
+                w.emit(" <= ");
+                e.getRight().accept(this, w);
+            /*}
+            else{
+                StringWriter lsw = new StringWriter();
+                ScalaWriter lw = new ScalaWriter(lsw);
+                lw.continuationLevel = w.continuationLevel;
+                lw.duplicateReplacements = w.duplicateReplacements;
+                StringWriter rsw = new StringWriter();
+                ScalaWriter rw = new ScalaWriter(rsw);
+                rw.continuationLevel = w.continuationLevel;
+                rw.duplicateReplacements = w.duplicateReplacements;
+                e.getLeft().accept(this,lw);
+                e.getRight().accept(this, rw);
+                if(lt.getQualifiedName().contains("Int")){
+                    if(rt.getQualifiedName().contains("Int"))
+                        w.emit(String.format("new Rational(%s,%s)", lsw,rsw));
+                    else
+                        w.emit(String.format("new Rational(%s)<=%s", lsw,rsw));
+                }
+                else{
+                    if(rt.getQualifiedName().contains("Int"))
+                        w.emit(String.format("%s<=new Rational(%s)", lsw,rsw));
+                    else
+                        w.emit(String.format("%s<=%s", lsw,rsw));
+                }
+            }*/
             w.endExpressionGroup();
         } catch (IOException x) {
             throw new RuntimeException(x);
@@ -2239,9 +2791,38 @@ public class ScalaVisitor {
     public void visit(GTEQExp e, ScalaWriter w) {
         try {
             w.beginExpressionGroup();
-            e.getLeft().accept(this, w);
-            w.emit(" >= ");
-            e.getRight().accept(this, w);
+            Type t = e.getType();
+            Type lt = e.getLeft().getType();
+            Type rt = e.getRight().getType();
+            //if(!t.getQualifiedName().contains("Rat")) {
+                e.getLeft().accept(this, w);
+                w.emit(" >= ");
+                e.getRight().accept(this, w);
+            /*}
+            else{
+                StringWriter lsw = new StringWriter();
+                ScalaWriter lw = new ScalaWriter(lsw);
+                lw.continuationLevel = w.continuationLevel;
+                lw.duplicateReplacements = w.duplicateReplacements;
+                StringWriter rsw = new StringWriter();
+                ScalaWriter rw = new ScalaWriter(rsw);
+                rw.continuationLevel = w.continuationLevel;
+                rw.duplicateReplacements = w.duplicateReplacements;
+                e.getLeft().accept(this,lw);
+                e.getRight().accept(this, rw);
+                if(lt.getQualifiedName().contains("Int")){
+                    if(rt.getQualifiedName().contains("Int"))
+                        w.emit(String.format("new Rational(%s,%s)", lsw,rsw));
+                    else
+                        w.emit(String.format("new Rational(%s)>=%s", lsw,rsw));
+                }
+                else{
+                    if(rt.getQualifiedName().contains("Int"))
+                        w.emit(String.format("%s>=new Rational(%s)", lsw,rsw));
+                    else
+                        w.emit(String.format("%s>=%s", lsw,rsw));
+                }
+            }*/
             w.endExpressionGroup();
         } catch (IOException x) {
             throw new RuntimeException(x);
@@ -2302,7 +2883,6 @@ public class ScalaVisitor {
 
     }
 
-    /* UNIMIPLEMENTED VISITS */
 
     public void visit(InterfaceTypeUse e, ScalaWriter w) {
         try {
@@ -2381,9 +2961,16 @@ public class ScalaVisitor {
         }
     }
 
+    /* UNIMIPLEMENTED VISITS */
+
     public void visit(ExceptionDecl e, ScalaWriter w) {
 
     }
+
+    public void visit(PartialFunctionDecl e, ScalaWriter w) {
+
+    }
+
 
     public void visit(SkipStmt e, ScalaWriter w) {
 
@@ -2402,10 +2989,12 @@ public class ScalaVisitor {
     }
 
     public void visit(TryCatchFinallyStmt e, ScalaWriter w) {
-
+        //TODO: Java try catch
+        //TODO: look for the recovery block in class decl.
     }
 
     public void visit(ThrowStmt e, ScalaWriter w) {
+        //TODO: Java throw
 
     }
 
@@ -2422,10 +3011,18 @@ public class ScalaVisitor {
     }
 
     public void visit(TypeParameterDecl e, ScalaWriter w) {
-
+        String adtName = e.getName();
+        String typeName = e.getType().getQualifiedName();
+        StringWriter sw = new StringWriter();
+        ScalaWriter tw = new ScalaWriter(sw);
+        if(e.getType().toUse()!=null) {
+            e.getType().toUse().accept(this, tw);
+            typeName = sw.toString();
+        }
+        this.javaTypeTranslator.registerAbstractType(adtName, typeName);
     }
 
-    public void visit(GetLocExp e, ScalaWriter w) {
+  /*  public void visit(GetLocExp e, ScalaWriter w) {
 
     }
 
@@ -2449,11 +3046,13 @@ public class ScalaVisitor {
 
     }
 
-    public void visit(ListLiteral e, ScalaWriter w) {
+*/
+    public void visit(OriginalCall e, ScalaWriter w) {
 
     }
 
-    public void visit(OriginalCall e, ScalaWriter w) {
+    public void visit(BuiltinFunctionDef e, ScalaWriter w) {
+        //TODO: Scheduler builtins (manual 14.2)
 
     }
 
@@ -2461,7 +3060,7 @@ public class ScalaVisitor {
 
     }
 
-    public void visit(MoveStmt e, ScalaWriter w) {
+/*    public void visit(MoveStmt e, ScalaWriter w) {
 
     }
 
@@ -2476,7 +3075,7 @@ public class ScalaVisitor {
     public void visit(RebindStmt e, ScalaWriter w) {
 
     }
-
+*/
     public void visit(TraitDecl e, ScalaWriter w) {
 
     }
@@ -2487,7 +3086,7 @@ public class ScalaVisitor {
 
     /******************/
     public List<ScalaWriter> continuation(abs.frontend.ast.List<Stmt> list, List<ScalaWriter> currentMethodWriters,
-            boolean isInMethod) {
+                                          boolean isInMethod) {
 
         // System.out.println("Entering continuation creation with awaitCounter
         // " + awaitCounter + "for method "
@@ -2517,11 +3116,18 @@ public class ScalaVisitor {
             int tmpS = syncPCounter;
             int tmpA = asyncPCounter;
 
+
             for (ScalaWriter javaWriter : currentMethodWriters) {
+                LinkedList<TreeSet<VarDefinition>> oldVarsinScope = new LinkedList<>();
+                for (TreeSet<VarDefinition> node:
+                     variablesInScope) {
+                    oldVarsinScope.add(new TreeSet<>(node));
+                }
 
                 if (!javaWriter.avoiddc)
                     as.accept(this, javaWriter);
 
+                variablesInScope = oldVarsinScope;
                 awaitCounter = tmp;
                 syncPCounter = tmpS;
                 asyncPCounter = tmpA;
@@ -2540,6 +3146,9 @@ public class ScalaVisitor {
             if (as instanceof WhileStmt) {
                 WhileStmt sw = (WhileStmt) as;
                 Block whileBlock = sw.getBody();
+
+//                System.out.println("while in"+currentMethod.getName());
+//                System.out.println(sw.getCondition().toString());
 
                 List<ScalaWriter> innerAwaits = continuation(whileBlock.getStmts(), new LinkedList<>(), false);
 
@@ -2579,15 +3188,20 @@ public class ScalaVisitor {
 
             // System.out.println(awaitCounter);
 
+            if(as instanceof Block){
+                List<ScalaWriter> innerAwaits1 = continuation(((Block) as).getStmts(), new LinkedList<>(), false);
+                currentMethodWriters.addAll(innerAwaits1);
+            }
+
             if (as instanceof IfStmt) {
                 IfStmt sie = (IfStmt) as;
                 Block ifBlock = sie.getThen();
                 Block elseBlock = sie.getElse();
 
-                
+
                 List<ScalaWriter> innerAwaits1 = continuation(ifBlock.getStmts(), new LinkedList<>(), false);
                 currentMethodWriters.addAll(innerAwaits1);
-                
+
                 if (sie.hasElse()) {
                     List<ScalaWriter> innerAwaits2 = continuation(elseBlock.getStmts(), new LinkedList<>(), false);
 
@@ -2644,7 +3258,8 @@ public class ScalaVisitor {
 
                 StringBuilder label = new StringBuilder(classes.peek());
                 label.append(currentMethod.getName());
-                label.append("Await" + (awaitCounter++));
+                label.append("Await" + (awaitCounter));
+
                 StringWriter auxsw = new StringWriter();
                 ScalaWriter auxw = new ScalaWriter(auxsw);
                 auxw.continuationLevel = -1;
@@ -2667,7 +3282,7 @@ public class ScalaVisitor {
                 }
                 currentMethodLabels.add(auxsw);
                 currentMethodWriters.add(auxw);
-
+                awaitCounter++;
             }
 
             if (as instanceof ExpressionStmt) {
@@ -2675,12 +3290,13 @@ public class ScalaVisitor {
                 if (exp.getExp() instanceof EffExp) {
                     EffExp ee = (EffExp) exp.getExp();
                     if (ee instanceof SyncCall) {
+
                         SyncCall smc = (SyncCall) ee;
                         String methodName = smc.getMethod().equals(METHOD_GET) ? "get" : smc.getMethod();
-                        if (callHasAwait(methodName)) {
+                        if (!getCalleeId(smc, new ScalaWriter(new StringWriter())).equals(LITERAL_THIS) || callHasAwait(smc, methodName)) {
                             StringBuilder label = new StringBuilder(classes.peek());
                             label.append(currentMethod.getName());
-                            label.append("Await" + (awaitCounter++));
+                            label.append("Await" + (awaitCounter));
 
                             StringWriter auxsw = new StringWriter();
                             ScalaWriter auxw = new ScalaWriter(auxsw);
@@ -2708,7 +3324,9 @@ public class ScalaVisitor {
                             }
                             currentMethodLabels.add(auxsw);
                             currentMethodWriters.add(auxw);
+                            awaitCounter++;
                         }
+
                     }
 
                     if (ee instanceof GetExp) {
@@ -2721,7 +3339,7 @@ public class ScalaVisitor {
 
                             StringBuilder label = new StringBuilder(classes.peek());
                             label.append(currentMethod.getName());
-                            label.append("Await" + (awaitCounter++));
+                            label.append("Await" + (awaitCounter));
                             StringWriter auxsw = new StringWriter();
                             ScalaWriter auxw = new ScalaWriter(auxsw);
                             auxw.continuationLevel = -1;
@@ -2744,6 +3362,7 @@ public class ScalaVisitor {
                             }
                             currentMethodLabels.add(auxsw);
                             currentMethodWriters.add(auxw);
+                            awaitCounter++;
                         }
                     }
                 }
@@ -2763,49 +3382,101 @@ public class ScalaVisitor {
                     String methodName = null;
                     if (ee instanceof SyncCall) {
                         SyncCall smc = (SyncCall) ee;
+
                         methodName = smc.getMethod().equals(METHOD_GET) ? "get" : smc.getMethod();
-                    }
 
-                    if (callHasAwait(methodName)) {
-                        StringBuilder label = new StringBuilder(classes.peek());
-                        label.append(currentMethod.getName());
-                        label.append("Await" + (awaitCounter++));
+                        if (!getCalleeId(smc, new ScalaWriter(new StringWriter())).equals(LITERAL_THIS) || callHasAwait(smc, methodName)) {
 
-                        StringBuilder futureName = new StringBuilder();
-                        futureName.append("future_");
-                        futureName.append(varName.toString());
-                        StringWriter auxsw = new StringWriter();
-                        ScalaWriter auxw = new ScalaWriter(auxsw);
-                        auxw.continuationLevel = -1;
+                            StringBuilder label = new StringBuilder(classes.peek());
+                            label.append(currentMethod.getName());
+                            label.append("Await" + (awaitCounter));
 
-                        try {
-                            String returnType = currentMethod.type() != null ? currentMethod.type() : "void";
-                            List<String> parameters = new ArrayList<>();
-                            for (TreeSet<VarDefinition> defs : variablesInScope) {
-                                for (VarDefinition varDefinition : defs) {
-                                    parameters.add(varDefinition.getType());
-                                    parameters.add(getDuplicate(varDefinition.getName(), auxw));
+                            StringBuilder futureName = new StringBuilder();
+                            futureName.append("future_");
+                            futureName.append(varName.toString());
+                            StringWriter auxsw = new StringWriter();
+                            ScalaWriter auxw = new ScalaWriter(auxsw);
+                            auxw.continuationLevel = -1;
+
+                            try {
+                                String returnType = currentMethod.type() != null ? currentMethod.type() : "void";
+                                List<String> parameters = new ArrayList<>();
+                                for (TreeSet<VarDefinition> defs : variablesInScope) {
+                                    for (VarDefinition varDefinition : defs) {
+                                        parameters.add(varDefinition.getType());
+                                        parameters.add(getDuplicate(varDefinition.getName(), auxw));
+                                    }
                                 }
+
+                                StringWriter tsw = new StringWriter();
+                                ScalaWriter tw = new ScalaWriter(tsw);
+                                sas.getVar().getType().toUse().accept(this, tw);
+
+                                parameters.add(String.format("%s", tsw.toString()));
+                                parameters.add(futureName.toString());
+
+                                startContinuation(label, auxw, returnType, parameters);
+
+                                auxw.emitStatement("%s = %s", getDuplicate(varName.toString(), auxw), futureName);
+
+                            } catch (IOException e) {
+                                // TODO Auto-generated catch block
+                                e.printStackTrace();
                             }
-
-                            StringWriter tsw = new StringWriter();
-                            ScalaWriter tw = new ScalaWriter(tsw);
-                            sas.getVar().getType().toUse().accept(this, tw);
-
-                            parameters.add(String.format("%s", tsw.toString()));
-                            parameters.add(futureName.toString());
-
-                            startContinuation(label, auxw, returnType, parameters);
-
-                            auxw.emitStatement("%s = %s", getDuplicate(varName.toString(), auxw), futureName);
-
-                        } catch (IOException e) {
-                            // TODO Auto-generated catch block
-                            e.printStackTrace();
+                            currentMethodLabels.add(auxsw);
+                            currentMethodWriters.add(auxw);
+                            awaitCounter++;
                         }
-                        currentMethodLabels.add(auxsw);
-                        currentMethodWriters.add(auxw);
+
                     }
+
+                    if(ee instanceof NewExp){
+                        NewExp ne = (NewExp)ee;
+                        String qname = ne.getType().getQualifiedName();
+                        if(checkAwait(CONSTRUCTOR,qname)) {
+
+                            StringBuilder label = new StringBuilder(classes.peek());
+                            label.append(currentMethod.getName());
+                            label.append("Await" + (awaitCounter));
+
+                            StringBuilder futureName = new StringBuilder();
+                            futureName.append("future_");
+                            futureName.append(varName.toString());
+                            StringWriter auxsw = new StringWriter();
+                            ScalaWriter auxw = new ScalaWriter(auxsw);
+                            auxw.continuationLevel = -1;
+
+                            try {
+                                String returnType = currentMethod.type() != null ? currentMethod.type() : "void";
+                                List<String> parameters = new ArrayList<>();
+                                for (TreeSet<VarDefinition> defs : variablesInScope) {
+                                    for (VarDefinition varDefinition : defs) {
+                                        parameters.add(varDefinition.getType());
+                                        parameters.add(getDuplicate(varDefinition.getName(), auxw));
+                                    }
+                                }
+
+//                                StringWriter tsw = new StringWriter();
+//                                ScalaWriter tw = new ScalaWriter(tsw);
+//                                sas.getVar().getType().toUse().accept(this, tw);
+//
+//                                parameters.add(String.format("%s", tsw.toString()));
+//                                parameters.add(futureName.toString());
+//
+                                startContinuation(label, auxw, returnType, parameters);
+
+                                //auxw.emitStatement("%s = %s", getDuplicate(varName.toString(), auxw), futureName);
+
+                            } catch (IOException e) {
+                                // TODO Auto-generated catch block
+                                e.printStackTrace();
+                            }
+                            currentMethodLabels.add(auxsw);
+                            currentMethodWriters.add(auxw);
+                            awaitCounter++;
+                        }
+                    }
+
 
                     if (ee instanceof GetExp) {
 
@@ -2816,7 +3487,7 @@ public class ScalaVisitor {
                         if (!getsw.toString().startsWith("tmp")) {
                             StringBuilder label = new StringBuilder(classes.peek());
                             label.append(currentMethod.getName());
-                            label.append("Await" + (awaitCounter++));
+                            label.append("Await" + (awaitCounter));
                             StringWriter auxsw = new StringWriter();
                             ScalaWriter auxw = new ScalaWriter(auxsw);
                             auxw.continuationLevel = -1;
@@ -2863,6 +3534,7 @@ public class ScalaVisitor {
                             }
                             currentMethodLabels.add(auxsw);
                             currentMethodWriters.add(auxw);
+                            awaitCounter++;
                         }
                     }
 
@@ -2881,50 +3553,99 @@ public class ScalaVisitor {
                     if (ee instanceof SyncCall) {
                         SyncCall smc = (SyncCall) ee;
                         methodName = smc.getMethod().equals(METHOD_GET) ? "get" : smc.getMethod();
+                        if (!getCalleeId(smc, new ScalaWriter(new StringWriter())).equals(LITERAL_THIS) || callHasAwait(smc, methodName)) {
+
+
+                            StringBuilder label = new StringBuilder(classes.peek());
+                            label.append(currentMethod.getName());
+                            label.append("Await" + (awaitCounter));
+
+                            StringWriter auxsw = new StringWriter();
+                            ScalaWriter auxw = new ScalaWriter(auxsw);
+                            auxw.continuationLevel = -1;
+
+                            StringBuilder futureName = new StringBuilder();
+                            futureName.append("future_");
+                            futureName.append(varName.toString());
+
+                            try {
+                                String returnType = currentMethod.type() != null ? currentMethod.type() : "void";
+                                List<String> parameters = new ArrayList<>();
+                                for (TreeSet<VarDefinition> defs : variablesInScope) {
+                                    for (VarDefinition varDefinition : defs) {
+                                        if (!varDefinition.getName()
+                                                .equals(javaTypeTranslator.translateKeyword(das.getName()))) {
+                                            parameters.add(varDefinition.getType());
+                                            parameters.add(getDuplicate(varDefinition.getName(), auxw));
+                                        }
+                                    }
+                                }
+
+                                StringWriter tsw = new StringWriter();
+                                ScalaWriter tw = new ScalaWriter(tsw);
+                                das.getAccess().accept(this, tw);
+
+                                parameters.add(String.format("%s", tsw.toString()));
+                                parameters.add(futureName.toString());
+
+                                startContinuation(label, auxw, returnType, parameters);
+                                auxw.emitStatement("var %s : %s = %s", varName, tsw.toString(), futureName);
+
+                            } catch (IOException e) {
+                                // TODO Auto-generated catch block
+                                e.printStackTrace();
+                            }
+                            currentMethodLabels.add(auxsw);
+                            currentMethodWriters.add(auxw);
+                            awaitCounter++;
+                        }
                     }
-                    if (callHasAwait(methodName)) {
 
-                        StringBuilder label = new StringBuilder(classes.peek());
-                        label.append(currentMethod.getName());
-                        label.append("Await" + (awaitCounter++));
+                    if(ee instanceof NewExp){
+                        NewExp ne = (NewExp)ee;
+                        String qname = ne.getType().getQualifiedName();
+                        if(checkAwait(CONSTRUCTOR,qname)) {
 
-                        StringWriter auxsw = new StringWriter();
-                        ScalaWriter auxw = new ScalaWriter(auxsw);
-                        auxw.continuationLevel = -1;
+                            StringBuilder label = new StringBuilder(classes.peek());
+                            label.append(currentMethod.getName());
+                            label.append("Await" + (awaitCounter));
 
-                        StringBuilder futureName = new StringBuilder();
-                        futureName.append("future_");
-                        futureName.append(varName.toString());
+                            StringBuilder futureName = new StringBuilder();
+                            futureName.append("future_");
+                            futureName.append(varName.toString());
+                            StringWriter auxsw = new StringWriter();
+                            ScalaWriter auxw = new ScalaWriter(auxsw);
+                            auxw.continuationLevel = -1;
 
-                        try {
-                            String returnType = currentMethod.type() != null ? currentMethod.type() : "void";
-                            List<String> parameters = new ArrayList<>();
-                            for (TreeSet<VarDefinition> defs : variablesInScope) {
-                                for (VarDefinition varDefinition : defs) {
-                                    if (!varDefinition.getName()
-                                            .equals(javaTypeTranslator.translateKeyword(das.getName()))) {
+                            try {
+                                String returnType = currentMethod.type() != null ? currentMethod.type() : "void";
+                                List<String> parameters = new ArrayList<>();
+                                for (TreeSet<VarDefinition> defs : variablesInScope) {
+                                    for (VarDefinition varDefinition : defs) {
                                         parameters.add(varDefinition.getType());
                                         parameters.add(getDuplicate(varDefinition.getName(), auxw));
                                     }
                                 }
+
+//                                StringWriter tsw = new StringWriter();
+//                                ScalaWriter tw = new ScalaWriter(tsw);
+//                                das.getAccess().accept(this, tw);
+//
+//                                parameters.add(String.format("%s", tsw.toString()));
+//                                parameters.add(futureName.toString());
+
+                                startContinuation(label, auxw, returnType, parameters);
+
+                                //auxw.emitStatement("%s = %s", getDuplicate(varName.toString(), auxw), futureName);
+
+                            } catch (IOException e) {
+                                // TODO Auto-generated catch block
+                                e.printStackTrace();
                             }
-
-                            StringWriter tsw = new StringWriter();
-                            ScalaWriter tw = new ScalaWriter(tsw);
-                            das.getAccess().accept(this, tw);
-
-                            parameters.add(String.format("%s", tsw.toString()));
-                            parameters.add(futureName.toString());
-
-                            startContinuation(label, auxw, returnType, parameters);
-                            auxw.emitStatement("var %s : %s = %s", varName, tsw.toString(), futureName);
-
-                        } catch (IOException e) {
-                            // TODO Auto-generated catch block
-                            e.printStackTrace();
+                            currentMethodLabels.add(auxsw);
+                            currentMethodWriters.add(auxw);
+                            awaitCounter++;
                         }
-                        currentMethodLabels.add(auxsw);
-                        currentMethodWriters.add(auxw);
                     }
 
                     if (ee instanceof GetExp) {
@@ -2937,7 +3658,7 @@ public class ScalaVisitor {
 
                             StringBuilder label = new StringBuilder(classes.peek());
                             label.append(currentMethod.getName());
-                            label.append("Await" + (awaitCounter++));
+                            label.append("Await" + (awaitCounter));
                             StringWriter auxsw = new StringWriter();
                             ScalaWriter auxw = new ScalaWriter(auxsw);
                             auxw.continuationLevel = -1;
@@ -2977,6 +3698,7 @@ public class ScalaVisitor {
                             }
                             currentMethodLabels.add(auxsw);
                             currentMethodWriters.add(auxw);
+                            awaitCounter++;
 
                         }
                     }
@@ -3007,8 +3729,8 @@ public class ScalaVisitor {
 
     }
 
-    public void visitMethodBody(MethodImpl mcb, ScalaWriter notNeeded) {
-        for (Stmt annStm : mcb.getBlock().getStmts()) {
+    public void visitMethodBody(Block mcb, ScalaWriter notNeeded) {
+        for (Stmt annStm : mcb.getStmts()) {
             annStm.accept(this, notNeeded);
         }
     }
@@ -3069,7 +3791,7 @@ public class ScalaVisitor {
 
             jw.emitEmptyLine();
 
-            // emitImplicitConversions(jw);
+            emitImplicitConversions(jw);
             List<String> javaMainMethodParameters = new ArrayList<>();
 
             jw.beginMethod(String.format("%s[%s]", ABSFUTURE_CLASS, VOID_WRAPPER_CLASS_NAME), "mainMessage",
@@ -3083,6 +3805,7 @@ public class ScalaVisitor {
             jw.emitEmptyLine();
             jw.emitSingleLineComment("Init section: %s", this.packageName);
 
+            //this.setDc(new ClassDeploymentComponent(null, null, "Main", EmptyMap[Resourcetype,Rational]));
             TreeSet<VarDefinition> blockScope = new TreeSet<>();
             variablesInScope.push(blockScope);
 
@@ -3092,6 +3815,8 @@ public class ScalaVisitor {
 
             // jw.emitStatement("%s.init()",
             // DeploymentComponent.class.getName());
+
+            jw.emitStatement("new %s(%s,%s, %s, EmptyMap[Resourcetype,Rational]);\n", CLASS_DC, LITERAL_NULL, LITERAL_NULL, "\"Main\"" );
 
             m.getBlock().accept(this, jw);
 
@@ -3162,11 +3887,51 @@ public class ScalaVisitor {
             w.emitField(varType, varName, new HashSet<>(), auxsw.toString());
         }
 
+        if(exp instanceof EffExp){
+            EffExp ee = (EffExp) exp;
+            if(ee instanceof NewExp){
+                NewExp ne = (NewExp)ee;
+                String qname = ne.getType().getQualifiedName();
+                if(checkAwait(CONSTRUCTOR,qname)) {
+
+                    StringBuilder label = new StringBuilder(classes.peek());
+                    label.append(currentMethod.getName());
+
+                    if (!w.isScope && !w.checkAwaits) {
+                        label.append("Await" + (awaitCounter));
+                    }
+
+                    StringBuilder valueName = new StringBuilder("unusedValue: Void");
+
+                    String methodCall = generateContinuationMethodInvocation("this", label.toString(), w, 'w', awaitCounter, true);
+//                    StringBuilder mc = new StringBuilder(methodCall);
+//                    if(mc.lastIndexOf("(")+1==mc.indexOf(")"))
+//                        mc.insert(mc.indexOf(")"), valueName);
+//                    else
+//                        mc.insert(mc.indexOf(")"), ","+valueName);
+
+                    try {
+                        //w.emitStatement("var %s: %s=>%s = (%s)=>%s", label + "m", type, currentMethod.type(), valueName,
+                         //       methodCall);
+                        w.emitStatement("return getSpawn(%s.%s, (%s)=>%s, %s.HIGH_PRIORITY, false)", varName, GET_CONSTRUCTOR_FUTURE, valueName, methodCall,
+                                ABS_API_INTERFACE_CLASS);
+                        w.avoiddc = true;
+                        if (!w.isScope && !w.checkAwaits) {
+                            awaitCounter++;
+                        }
+                    } catch (IOException e) {
+                        // TODO Auto-generated catch block
+                        e.printStackTrace();
+                    }
+                }
+            }
+        }
+
         w.emitStatementEnd();
     }
 
     protected void visitAsyncMethodCall(AsyncCall amc, String resultVarType, String resultVarName,
-            final boolean isDefined, ScalaWriter w) throws IOException {
+                                        final boolean isDefined, ScalaWriter w) throws IOException {
         String calleeId = getCalleeId(amc, w);
 
         String methodName = amc.getMethod().equals(METHOD_GET) ? "get" : amc.getMethod();
@@ -3193,7 +3958,7 @@ public class ScalaVisitor {
     }
 
     protected void visitGet(GetExp g, String resultVarType, String resultVarName, final boolean isDefined,
-            ScalaWriter w) {
+                            ScalaWriter w) {
 
         if (w.checkAwaits && !currentMethod.containsAwait()) {
             currentMethod.setContainsAwait(true);
@@ -3204,8 +3969,6 @@ public class ScalaVisitor {
         auxw.continuationLevel = w.continuationLevel;
         auxw.duplicateReplacements = w.duplicateReplacements;
         g.getPureExp().accept(this, auxw);
-        if (resultVarName.equals("last"))
-            System.out.println("visitGet" + variablesInScope);
 
         if (!auxsw.toString().contains("tmp")) {
 
@@ -3221,7 +3984,7 @@ public class ScalaVisitor {
                 label.append("Await" + (awaitCounter++));
             }
 
-            String methodCall = generateContinuationMethodInvocation("this", label.toString(), w, 'w', awaitCounter);
+            String methodCall = generateContinuationMethodInvocation("this", label.toString(), w, 'w', awaitCounter, true);
             StringBuilder actualawaitcall = new StringBuilder(methodCall);
             actualawaitcall.insert(actualawaitcall.indexOf(")"), ", " + valueName);
             String ret = currentMethod.type();
@@ -3253,7 +4016,7 @@ public class ScalaVisitor {
     }
 
     protected void visitSyncMethodCall_Sync(SyncCall smc, String resultVarType, String resultVarName, boolean isDefined,
-            ScalaWriter w) throws IOException {
+                                            ScalaWriter w) throws IOException {
         String calleeId = getCalleeId(smc, w);
         List<String> params = new ArrayList<>();
 
@@ -3272,11 +4035,12 @@ public class ScalaVisitor {
         String methodName = smc.getMethod().equals(METHOD_GET) ? "get" : smc.getMethod();
 
         if (w.checkAwaits) {
-            if (callHasAwait(methodName) && !currentMethod.containsAwait()) {
+            if (((callHasAwait(smc, methodName)) || (!calleeId.equals(LITERAL_THIS))) && !currentMethod.containsAwait()) {
                 currentMethod.setContainsAwait(true);
                 awaitsDetected = true;
             }
         } else {
+
             String potentialReturnType = String.format("%s[%s]", ABSFUTURE_CLASS, resultVarType);
             String msgVar = createMessageVariableName(calleeId);
 
@@ -3284,7 +4048,32 @@ public class ScalaVisitor {
 
             String javaMethodCall = String.format("%s.%s(%s)", calleeId, methodName, String.join(COMMA_SPACE, params));
 
-            if (callHasAwait(methodName)) {
+            StringBuilder label = new StringBuilder(classes.peek());
+            label.append(currentMethod.getName());
+
+            //if (methodName.equals("addElement") && currentMethod.getName().equals("run"))
+            //    System.out.println(methodName + " ca " + callHasAwait(smc, methodName));
+
+//            if(fromConstructor){
+//                if (resultVarName != null) {
+//                    if (isDefined)
+//                        w.emitStatement("%s = %s.%s", resultVarName, javaMethodCall, SYNC_GET);
+//                    else
+//                        w.emitStatement("var %s : %s = %s.%s", resultVarName, resultVarType, javaMethodCall, SYNC_GET);
+//
+//                } else
+//                    w.emitStatement(javaMethodCall);
+//                return;
+//            }
+
+            if (!w.isScope && !w.checkAwaits) {
+                label.append("Await" + (awaitCounter));
+            }
+
+            if (!calleeId.equals(LITERAL_THIS))
+                w.beginControlFlow("if(%s.sameCog(%s))", calleeId, LITERAL_THIS);
+
+            if (callHasAwait(smc, methodName)) {
 
                 w.emitStatement("var %s : %s = %s", msgVar, potentialReturnType, javaMethodCall);
 
@@ -3300,15 +4089,48 @@ public class ScalaVisitor {
             }
 
             w.emitStatementEnd();
-            if (callHasAwait(methodName)) {
-                visitSyncMethodCall_Async(msgVar, resultVarType, resultVarName, isDefined, w);
-            }
+            if (callHasAwait(smc, methodName)) {
+                String awaitCall = generateContinuationMethodInvocation("this", label.toString(), w, 'w', awaitCounter, true);
 
+                visitSyncMethodCall_Async(msgVar, resultVarType, resultVarName, w, awaitCall, false);
+            } else {
+                if (!calleeId.equals(LITERAL_THIS)) {
+
+                    String awaitCall = generateContinuationMethodInvocation("this", label.toString(), w, 'w', awaitCounter, false);
+                    StringBuilder actualawaitcall = new StringBuilder(awaitCall);
+                    int l = awaitCall.indexOf("(");
+                    int r = awaitCall.indexOf(")");
+                    if (resultVarName != null)
+                        actualawaitcall.insert(actualawaitcall.indexOf(")"), (awaitCall.substring(l, r).length() > 1 ? ", " : "") + resultVarName);
+                    if(fromConstructor)
+                    w.emitStatement("%s = %s",CONS_FUT, actualawaitcall);
+                    else
+                        w.emitStatement("return %s", actualawaitcall);
+                }
+            }
+            if (!calleeId.equals(LITERAL_THIS)) {
+                w.endControlFlow();
+                w.beginControlFlow("else");
+
+                String awaitCall = generateContinuationMethodInvocation("this", label.toString(), w, 'w', awaitCounter, true);
+
+                //String futName = resultVarName + "f";
+                String message = String.format("()=>%s", javaMethodCall);
+                String sendStatement = generateMessageInvocationStatement(calleeId, true, potentialReturnType, message, msgVar, w);
+                w.emitStatement(sendStatement);
+                visitSyncMethodCall_Async(msgVar, resultVarType, resultVarName, w, awaitCall, true);
+
+
+                w.endControlFlow();
+            }
+            if (!calleeId.equals(LITERAL_THIS)||callHasAwait(smc,methodName)) {
+                awaitCounter++;
+            }
         }
     }
 
     protected void visitSyncMethodCall_Async(String possibleF, String resultVarType, String resultVarName,
-            boolean isDefined, ScalaWriter w) throws IOException {
+                                             ScalaWriter w, String awaitCall, boolean cog) throws IOException {
 
         // TODO : complete sync->async
         // String calleeId = getCalleeId(smc, w);
@@ -3328,14 +4150,7 @@ public class ScalaVisitor {
         // String msgVarName = createMessageVariableName(calleeId);
         // String methodName = smc.getMethod().equals(METHOD_GET) ? "get" :
         // smc.getMethod();
-        String potentialReturnType = resultVarType;
 
-        StringBuilder label = new StringBuilder(classes.peek());
-        label.append(currentMethod.getName());
-
-        if (!w.isScope && !w.checkAwaits) {
-            label.append("Await" + (awaitCounter++));
-        }
 
         // System.out.println("RV = " + resultVarName);
         StringBuilder futureName = new StringBuilder();
@@ -3347,49 +4162,54 @@ public class ScalaVisitor {
                 futureName.deleteCharAt(index);
         }
 
+
         StringBuilder extraP = new StringBuilder();
-        if (!(resultVarName == null || resultVarName.length() == 0)) {
-            extraP.append(futureName.toString() + "_par: " + (resultVarType == null ? "Void" : resultVarType));
+        if (possibleF != null || cog) {
+            if (!(resultVarName == null || resultVarName.length() == 0)) {
+                extraP.append(futureName.toString() + "_par: " + (resultVarType == null ? "Void" : resultVarType));
 
-        } else {
-            extraP.append(possibleF.toString() + "_par: " + (resultVarType == null ? "Void" : resultVarType));
+            } else {
+                extraP.append(possibleF.toString() + "_par: " + (resultVarType == null ? "Void" : resultVarType));
 
+            }
+
+            String extraPName = extraP.substring(0, extraP.indexOf(":"));
+
+            StringBuilder actualawaitcall = new StringBuilder(awaitCall);
+            int l = awaitCall.indexOf("(");
+            int r = awaitCall.indexOf(")");
+            if (resultVarName != null) {
+                actualawaitcall.insert(actualawaitcall.indexOf(")"), (awaitCall.substring(l, r).length() > 1 ? ", " : "") + extraPName);
+            }
+
+            //
+            // if ((w.continuationLevel > -1 || w.avoidDuplicates)) {
+            // w.duplicateReplacements.peek().put(futureName.toString(),
+            // "w_" + awaitCounter + "$" + futureName.toString());
+            //
+            // }
+
+            // String syncCall = generateJavaMethodInvocation(calleeId, methodName,
+            // smc.getParams(), w, 's', syncPCounter);
+
+            // String awaitCall = generateContinuationMethodInvocation("this",
+            // label.toString(), w, 'w', awaitCounter);
+
+            // System.out.println(awaitCall);
+
+            // String msgStatement = generateMessageStatement(msgVarName,
+            // potentialReturnType, syncCall);
+            // w.emit(msgStatement, true);
+            // w.emitStatementEnd();
+
+            String getSpawnStm;
+            getSpawnStm = generateMessageSyncInvocationStatement("this", possibleF, "(" + extraP + ")=>" + actualawaitcall, cog);
+
+            w.emit(getSpawnStm, true);
+            w.emitStatementEnd();
+
+            w.avoiddc = true;
         }
-
-        String extraPName = extraP.substring(0, extraP.indexOf(":"));
-
-        String awaitCall = generateContinuationMethodInvocation("this", label.toString(), w, 'w', awaitCounter);
-        StringBuilder actualawaitcall = new StringBuilder(awaitCall);
-        if (resultVarName != null) {
-            actualawaitcall.insert(actualawaitcall.indexOf(")"), ", " + extraPName);
-        }
-
-        //
-        // if ((w.continuationLevel > -1 || w.avoidDuplicates)) {
-        // w.duplicateReplacements.peek().put(futureName.toString(),
-        // "w_" + awaitCounter + "$" + futureName.toString());
-        //
-        // }
-
-        // String syncCall = generateJavaMethodInvocation(calleeId, methodName,
-        // smc.getParams(), w, 's', syncPCounter);
-
-        // String awaitCall = generateContinuationMethodInvocation("this",
-        // label.toString(), w, 'w', awaitCounter);
-
-        // System.out.println(awaitCall);
-
-        // String msgStatement = generateMessageStatement(msgVarName,
-        // potentialReturnType, syncCall);
-        // w.emit(msgStatement, true);
-        // w.emitStatementEnd();
-
-        String getSpawnStm;
-        getSpawnStm = generateMessageSyncInvocationStatement("this", possibleF, "(" + extraP + ")=>" + actualawaitcall);
-
-        w.emit(getSpawnStm, true);
-        w.emitStatementEnd();
-        w.avoiddc = true;
     }
 
     protected void visitImports(final abs.frontend.ast.List<Import> list, ScalaWriter w) throws IOException {
@@ -3434,36 +4254,27 @@ public class ScalaVisitor {
     }
 
     protected void beginElementKind(ScalaWriter w, ElementKind kind, String identifier, Set<Modifier> modifiers,
-            String classParentType, abs.frontend.ast.List<InterfaceTypeUse> list) throws IOException {
+                                    String classParentType, abs.frontend.ast.List<InterfaceTypeUse> list) throws IOException {
         beginElementKind(w, kind, identifier, modifiers, classParentType, list, null, true);
     }
 
     /**
      * Begin a Java type.
-     * 
-     * @param w
-     *            the Java writer
-     * @param kind
-     *            See {@link ElementKind}
-     * @param identifier
-     *            the Java identifier of the type
-     * @param modifiers
-     *            the set of {@link Modifier}s
-     * @param classParentType
-     *            the extending type that can be <code>null</code>
-     * @param list
-     *            the implementing interface that can be <code>null</code>
-     * @param isActor
-     *            indicates if the class should "implement"
-     *            <code>abs.api.Actor</code>
-     * @throws IOException
-     *             Exception from {@link ScalaWriter}
-     * @throws IllegalArgumentException
-     *             if kind other than "class" or "interface" is requested
+     *
+     * @param w               the Java writer
+     * @param kind            See {@link ElementKind}
+     * @param identifier      the Java identifier of the type
+     * @param modifiers       the set of {@link Modifier}s
+     * @param classParentType the extending type that can be <code>null</code>
+     * @param list            the implementing interface that can be <code>null</code>
+     * @param isActor         indicates if the class should "implement"
+     *                        <code>abs.api.Actor</code>
+     * @throws IOException              Exception from {@link ScalaWriter}
+     * @throws IllegalArgumentException if kind other than "class" or "interface" is requested
      */
     protected void beginElementKind(ScalaWriter w, ElementKind kind, String identifier, Set<Modifier> modifiers,
-            String classParentType, abs.frontend.ast.List<InterfaceTypeUse> list, List<String> constructorParameters,
-            final boolean isActor) throws IOException {
+                                    String classParentType, abs.frontend.ast.List<InterfaceTypeUse> list, List<String> constructorParameters,
+                                    final boolean isActor) throws IOException {
         Set<String> implementsTypes = new HashSet<>();
         if (list != null) {
             for (InterfaceTypeUse interfaceTypeUse : list) {
@@ -3473,32 +4284,32 @@ public class ScalaVisitor {
         }
         String kindName = kind.name().toLowerCase();
         switch (kind) {
-        case CLASS:
-            w.beginType(identifier, kindName, modifiers, classParentType, constructorParameters,
-                    implementsTypes.toArray(new String[0]));
-            if (isActor) {
-                emitSerialVersionUid(w);
-            }
+            case CLASS:
+                w.beginType(identifier, kindName, modifiers, classParentType, constructorParameters,
+                        implementsTypes.toArray(new String[0]));
+                if (isActor) {
+                    emitSerialVersionUid(w);
+                }
 
-            return;
-        case INTERFACE:
-            implementsTypes.add(ABS_API_INTERFACE_CLASS);
-            implementsTypes.add(String.format("%s[%s]", ORDERED_INTERFACE_CLASS, ABS_API_INTERFACE_CLASS));
-            w.beginType(identifier, kindName, modifiers, null, implementsTypes.toArray(new String[0]));
-            return;
-        case ENUM:
-            w.beginType(identifier, kindName, modifiers);
-            return;
-        case CONSTRUCTOR:
-            w.beginType(identifier, "object", modifiers, classParentType, implementsTypes.toArray(new String[0]));
-            return;
-        case OTHER:
-            w.beginType(identifier, "case class", modifiers, classParentType, constructorParameters,
-                    implementsTypes.toArray(new String[0]));
-            return;
+                return;
+            case INTERFACE:
+                implementsTypes.add(ABS_API_INTERFACE_CLASS);
+                implementsTypes.add(String.format("%s[%s]", ORDERED_INTERFACE_CLASS, ABS_API_INTERFACE_CLASS));
+                w.beginType(identifier, kindName, modifiers, null, implementsTypes.toArray(new String[0]));
+                return;
+            case ENUM:
+                w.beginType(identifier, kindName, modifiers);
+                return;
+            case CONSTRUCTOR:
+                w.beginType(identifier, "object", modifiers, classParentType, implementsTypes.toArray(new String[0]));
+                return;
+            case OTHER:
+                w.beginType(identifier, "case class", modifiers, classParentType, constructorParameters,
+                        implementsTypes.toArray(new String[0]));
+                return;
 
-        default:
-            throw new IllegalArgumentException("Unsupported Java element kind: " + kind);
+            default:
+                throw new IllegalArgumentException("Unsupported Java element kind: " + kind);
         }
     }
 
@@ -3611,22 +4422,19 @@ public class ScalaVisitor {
 
     /**
      * Creates a Java method invocation:
-     * 
+     * <p>
      * <pre>
      * myObj.myMethod(p1, p2, p3)
      * </pre>
-     * 
-     * @param object
-     *            the callee object
-     * @param method
-     *            the method of the callee object
-     * @param list
-     *            the parameters of the method that can be empty string
+     *
+     * @param object the callee object
+     * @param method the method of the callee object
+     * @param list   the parameters of the method that can be empty string
      * @return a string representing a Java method invocation statement
      */
 
     protected String generateJavaMethodInvocation(String object, String method, abs.frontend.ast.List<PureExp> list,
-            ScalaWriter w, char c, int counter) {
+                                                  ScalaWriter w, char c, int counter) {
         object = getDuplicate(object, w);
         List<String> params = new ArrayList<>();
         List<String> duplicateParameters = new LinkedList<>();
@@ -3638,7 +4446,7 @@ public class ScalaVisitor {
 
             par.accept(this, parameterWriter);
             String string;
-            if (par instanceof LiteralExp) {
+            if (par instanceof Access) {
                 params.add(parSW.toString());
                 string = parSW.toString();
             } else {
@@ -3647,15 +4455,22 @@ public class ScalaVisitor {
             }
 
             boolean found = false;
+
             if (string.contains("pureexp")) {
                 duplicateParameters.add(string.replace("pureexp", ""));
             } else {
+                StringWriter psw = new StringWriter();
+                ScalaWriter tw = new ScalaWriter(psw);
+
+                Type t = par.getType();
+                t.toUse().accept(this, tw);
+                String varType = psw.toString();
                 for (HashMap<String, String> hashMap1 : w.duplicateReplacements) {
                     if (hashMap1.containsKey(string)) {
                         final String stringName = "f_" + c + counter + hashMap1.get(string);
                         duplicateParameters.add(stringName);
                         try {
-                            w.emitStatement("var %s : %s = %s", stringName, par.getType().getSimpleName(),
+                            w.emitStatement("var %s : %s = %s", stringName, varType,
                                     hashMap1.get(string));
                         } catch (IOException e) {
                             // TODO Auto-generated catch block
@@ -3668,10 +4483,11 @@ public class ScalaVisitor {
                 }
                 if (!found)
                     if (par.getType() != null) {
-                        final String stringName = "f_" + c + counter + string;
+                        final String stringName = "f_" + c + counter + string.replaceAll("\\.", "");
+                        ;
                         duplicateParameters.add(stringName);
                         try {
-                            w.emitStatement("var %s : %s = %s", stringName, par.getType().getSimpleName(), string);
+                            w.emitStatement("var %s : %s = %s", stringName, varType, string);
                         } catch (IOException e) {
                             // TODO Auto-generated catch block
                             e.printStackTrace();
@@ -3680,7 +4496,8 @@ public class ScalaVisitor {
                         final String stringName = "f_" + c + counter + string;
                         duplicateParameters.add(stringName);
                         try {
-                            w.emitStatement("var %s : %s = %s", stringName, par.getType().getSimpleName(), string);
+
+                            w.emitStatement("var %s : %s = %s", stringName, varType, string);
                         } catch (IOException e) {
                             // TODO Auto-generated catch block
                             e.printStackTrace();
@@ -3695,27 +4512,29 @@ public class ScalaVisitor {
     }
 
     private String generateContinuationMethodInvocation(String object, String method, ScalaWriter w, char c,
-            int counter) {
+                                                        int counter, boolean lambda) {
 
         object = getDuplicate(object, w);
         boolean found = false;
         List<String> duplicateParameters = new LinkedList<>();
-        if (method.contains("ait2"))
-            System.out.println(variablesInScope);
         for (TreeSet<VarDefinition> defs : variablesInScope) {
             for (VarDefinition varDefinition : defs) {
                 found = false;
                 String string = varDefinition.getName();
                 for (HashMap<String, String> hashMap1 : w.duplicateReplacements) {
                     if (hashMap1.containsKey(string)) {
-                        final String stringName = "f_" + c + counter + hashMap1.get(string);
-                        duplicateParameters.add(stringName);
-                        try {
-                            w.emitStatement("var %s : %s = %s", stringName, varDefinition.getType(),
-                                    hashMap1.get(string));
-                        } catch (IOException e) {
-                            // TODO Auto-generated catch block
-                            e.printStackTrace();
+                        if (lambda) {
+                            final String stringName = "f_" + c + counter + hashMap1.get(string);
+                            duplicateParameters.add(stringName);
+                            try {
+                                w.emitStatement("var %s : %s = %s", stringName, varDefinition.getType(),
+                                        hashMap1.get(string));
+                            } catch (IOException e) {
+                                // TODO Auto-generated catch block
+                                e.printStackTrace();
+                            }
+                        } else {
+                            duplicateParameters.add(hashMap1.get(string));
                         }
                         found = true;
                         break;
@@ -3723,15 +4542,17 @@ public class ScalaVisitor {
                     }
                 }
                 if (!found) {
-
-                    final String stringName = "f_" + c + counter + string;
-                    duplicateParameters.add(stringName);
-                    try {
-                        w.emitStatement("var %s : %s = %s", stringName, varDefinition.getType(), string);
-                    } catch (IOException e) {
-                        // TODO Auto-generated catch block
-                        e.printStackTrace();
-                    }
+                    if (lambda) {
+                        final String stringName = "f_" + c + counter + string;
+                        duplicateParameters.add(stringName);
+                        try {
+                            w.emitStatement("var %s : %s = %s", stringName, varDefinition.getType(), string);
+                        } catch (IOException e) {
+                            // TODO Auto-generated catch block
+                            e.printStackTrace();
+                        }
+                    } else
+                        duplicateParameters.add(string);
 
                 }
             }
@@ -3744,17 +4565,14 @@ public class ScalaVisitor {
     /**
      * Create an asynchronous message in the context of ABS API which is either
      * an instance of {@link Runnable} or a {@link Callable}.
-     * 
-     * @param msgVarName
-     *            the variable name to use the created message
-     * @param returnType
-     *            the return type of the message; if <code>null</code>, it means
-     *            to use {@link Runnable}
-     * @param expression
-     *            the Java expression to use for the body of the lambda
-     *            expression
+     *
+     * @param msgVarName the variable name to use the created message
+     * @param returnType the return type of the message; if <code>null</code>, it means
+     *                   to use {@link Runnable}
+     * @param expression the Java expression to use for the body of the lambda
+     *                   expression
      * @return a string in Java representing a lambda expression for a
-     *         {@link Runnable} or a {@link Callable}
+     * {@link Runnable} or a {@link Callable}
      */
     protected String generateMessageStatement(String msgVarName, String returnType, String expression) {
         String newRetturnType = String.format("%s[%s]", ABSFUTURE_CLASS, returnType);
@@ -3763,23 +4581,19 @@ public class ScalaVisitor {
     }
 
     /**
-     * Create a Java statement when sending a message to an {@link Actor} in the
+     * Create a Java statement when sending a message to an {@link } in the
      * ABS API.
-     * 
-     * @param target
-     *            the receiver identifier of the message
-     * @param msgReturnType
-     *            the expected return type of the message; if <code>null</code>,
-     *            the generated {@link Response} will be over {@link Void}
-     * @param msgVarName
-     *            the variable name of the message
-     * @param responseVarName
-     *            the variable of the generated {@link Response}; can be
-     *            <code>null</code>
+     *
+     * @param target          the receiver identifier of the message
+     * @param msgReturnType   the expected return type of the message; if <code>null</code>,
+     *                        the generated {@link } will be over {@link Void}
+     * @param msgVarName      the variable name of the message
+     * @param responseVarName the variable of the generated {@link }; can be
+     *                        <code>null</code>
      * @return a Java statement string for such a call
      */
     protected String generateMessageInvocationStatement(String target, final boolean isDefined, String msgReturnType,
-            String msgVarName, String responseVarName, ScalaWriter w) {
+                                                        String msgVarName, String responseVarName, ScalaWriter w) {
 
         responseVarName = getDuplicate(responseVarName, w);
 
@@ -3795,14 +4609,18 @@ public class ScalaVisitor {
     }
 
     /**
-     * @param qtype
+     * @param target
      * @return
      */
-    protected String generateMessageSyncInvocationStatement(String target, String msgVarName, String contVarName) {
+    protected String generateMessageSyncInvocationStatement(String target, String msgVarName, String contVarName, boolean strict) {
         final String method = GET_SPAWN;
 
-        return String.format("return %s.%s(%s, %s, %s.HIGH_PRIORITY, false)", target, method, msgVarName, contVarName,
-                ABS_API_INTERFACE_CLASS);
+        if(fromConstructor)
+            return String.format("%s = %s.%s(%s, %s, %s.HIGH_PRIORITY, %s)",CONS_FUT, target, method, msgVarName, contVarName,
+                    ABS_API_INTERFACE_CLASS, strict);
+        else
+        return String.format("return %s.%s(%s, %s, %s.HIGH_PRIORITY, %s)", target, method, msgVarName, contVarName,
+                ABS_API_INTERFACE_CLASS, strict);
         // if (!isDefined) {
         // return String.format("%s = %s.%s(%s, %s)", responseVarName, target,
         // method, msgVarName, contVarName);
@@ -3816,20 +4634,23 @@ public class ScalaVisitor {
             return key;
     }
 
-    // private void emitImplicitConversions(ScalaWriter w) throws IOException {
-    // w.emit("implicit def fun2Call[R](f: () => R) = new Callable[R] { def call
-    // : R = f() }\n");
-    // w.emit("implicit def funcToRunnable( func : () => Unit ) = new
-    // Runnable(){ def run() = func() }\n");
-    // w.emit("implicit def funcToCallablewFut[R,V]( f : (ABSFuture[V]) => R ) =
-    // new CallablewFut[R,V] { def run(v: ABSFuture[V]) : R = f(v) }\n");
-    // w.emit("implicit def funcToRunnablewFut[V]( f : (ABSFuture[V]) => Unit )
-    // = new RunnablewFut[V] { def run(v: ABSFuture[V]) : Unit = f(v) }\n");
-    // w.emit("implicit def funcToCallableGet[T, V](f: (V) => T) = new
-    // CallableGet[T, V] { def run(v: V): T = f(v) }\n");
-    // w.emit("implicit def funcToRunnableGet[V](f: (V) => Unit) = new
-    // RunnableGet[V] { def run(v: V): Unit = f(v) }\n");
-    // }
+    private void emitImplicitConversions(ScalaWriter w) throws IOException {
+        w.emit(" implicit def f2int(f: Float):Int = f.round.toInt;\n");
+
+//
+//     w.emit("implicit def fun2Call[R](f: () => R) = new Callable[R] { def call
+//     : R = f() }\n");
+//     w.emit("implicit def funcToRunnable( func : () => Unit ) = new
+//     Runnable(){ def run() = func() }\n");
+//     w.emit("implicit def funcToCallablewFut[R,V]( f : (ABSFuture[V]) => R ) =
+//     new CallablewFut[R,V] { def run(v: ABSFuture[V]) : R = f(v) }\n");
+//     w.emit("implicit def funcToRunnablewFut[V]( f : (ABSFuture[V]) => Unit )
+//     = new RunnablewFut[V] { def run(v: ABSFuture[V]) : Unit = f(v) }\n");
+//     w.emit("implicit def funcToCallableGet[T, V](f: (V) => T) = new
+//     CallableGet[T, V] { def run(v: V): T = f(v) }\n");
+//     w.emit("implicit def funcToRunnableGet[V](f: (V) => Unit) = new
+//     RunnableGet[V] { def run(v: V): Unit = f(v) }\n");
+    }
 
     private String currentClass() {
         return this.classes.peek();
@@ -3849,7 +4670,7 @@ public class ScalaVisitor {
      * @throws IOException
      */
     protected ScalaWriter emitField(ScalaWriter w, String fieldType, String fieldIdentifier, String initialValue,
-            final boolean isFinal) throws IOException {
+                                    final boolean isFinal) throws IOException {
         EnumSet<Modifier> modifiers = EnumSet.noneOf(Modifier.class);
 
         fieldIdentifier = getDuplicate(fieldIdentifier, w);
@@ -3891,8 +4712,31 @@ public class ScalaVisitor {
         // auxw.duplicateReplacements);
     }
 
-    private boolean callHasAwait(String methodName) {
-        String key = this.packageName + "." + currentClass() + "." + methodName;
+    private boolean callHasAwait(SyncCall smc, String methodName) {
+        StringWriter typew = new StringWriter();
+        Type tu = smc.getCallee().getType();
+        if (tu.toUse() == null) {
+            if (tu.isBoundedType()) {
+                Type bt = ((BoundedType) tu).getBoundType();
+                if (bt != null && bt.toUse() != null) {
+                    bt.toUse().accept(this, new ScalaWriter(typew));
+                }
+                else
+                    typew.append(tu.getQualifiedName());
+            }
+            else
+                typew.append(tu.getQualifiedName());
+        }
+        else {
+            tu.toUse().accept(this, new ScalaWriter(typew));
+        }
+        String qname = typew.toString();
+
+        return checkAwait(methodName, qname);
+    }
+
+    private boolean checkAwait(String methodName, String qname) {
+        String key = qname + "." + methodName;
         if (programMethods.containsKey(key))
             return programMethods.get(key).containsAwait();
         return false;
