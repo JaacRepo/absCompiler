@@ -3,6 +3,7 @@ module NQueens;
 import Functions from Absstdlib;
 import * from Absstdlib;
 /*
+
 This Savina benchmark searches for k solutions to the N queens problem.
 To search different size checcboards, change the value of "size" in the main block (between 1 and 20)
 
