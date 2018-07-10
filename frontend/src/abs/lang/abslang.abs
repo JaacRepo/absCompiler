@@ -1161,6 +1161,119 @@ implements DeploymentComponentForCloudProvider {
         }
         return result;
     }
+    Unit acquireResource(Rat amount, Resourcetype rtype){
+    	case(rtype){
+    	    Speed=>{
+    		if(cpu!=InfRat){
+    		    Rat available = finvalue(cpu);
+    		    if(available>=amount){
+    			cpu = Fin(available-amount);
+    			cpuconsumed = cpuconsumed+amount;
+    		    }
+    		    else{
+    			Rat toAcquire = amount - available;
+    			cpu = Fin(0);
+    			cpuconsumed = cpuconsumed+available;
+    			while(toAcquire>0){
+    			    await duration(1,1);
+    			    available=finvalue(cpu);
+    			    if(available>=toAcquire){
+    				cpu = Fin(available-toAcquire);
+    				toAcquire=0;
+    				cpuconsumed=cpuconsumed+toAcquire;
+    			    }
+    			    else{
+    				toAcquire = toAcquire - available;
+    				cpu = Fin(0);
+    				cpuconsumed= cpuconsumed+available;
+    			    }
+    			}
+    		    }
+    		}
+    	    }
+    	    Memory=>{
+    		if(memory!=InfRat){
+    		    Rat available = finvalue(memory);
+    		    if(available>=amount){
+    			memory = Fin(available-amount);
+    			memoryconsumed = memoryconsumed+amount;
+    		    }
+    		    else{
+    			Rat toAcquire = amount - available;
+    			memory = Fin(0);
+    			memoryconsumed = memoryconsumed+available;
+    			while(toAcquire>0){
+    			    await duration(1,1);
+    			    available=finvalue(memory);
+    			    if(available>=toAcquire){
+    				memory = Fin(available-toAcquire);
+    				toAcquire=0;
+    				memoryconsumed=memoryconsumed+toAcquire;
+    			    }
+    			    else{
+    				toAcquire = toAcquire - available;
+    				memory = Fin(0);
+    				memoryconsumed= memoryconsumed+available;
+    			    }
+    			}
+    		    }
+    		}
+    	    }
+    	    Bandwidth=>{
+    		if(bw!=InfRat){
+    		    Rat available = finvalue(bw);
+    		    if(available>=amount){
+    			bw = Fin(available-amount);
+    			bwconsumed = bwconsumed+amount;
+    		    }
+    		    else{
+    			Rat toAcquire = amount - available;
+    			bw = Fin(0);
+    			bwconsumed = bwconsumed+available;
+    			while(toAcquire>0){
+    			    await duration(1,1);
+    			    available=finvalue(bw);
+    			    if(available>=toAcquire){
+    				bw = Fin(available-toAcquire);
+    				toAcquire=0;
+    				bwconsumed=bwconsumed+toAcquire;
+    			    }
+    			    else{
+    				toAcquire = toAcquire - available;
+    				bw = Fin(0);
+    				bwconsumed= bwconsumed+available;
+    			    }
+    			}
+    		    }
+    		}
+    	    }
+
+    	}
+        }
+        [Atomic] Unit replenish(){
+    	cpu = cpunext;
+    	cpunext = case lookup(initconfig, Speed) {
+    	    Nothing => InfRat; Just(v) => Fin(v);
+    	};
+    	cpuhistory = Cons(cpuconsumed,cpuhistory);
+    	cpuconsumed = 0;
+
+    	memory = memorynext;
+    	memorynext = case lookup(initconfig, Memory) {
+    	    Nothing => InfRat; Just(v) => Fin(v);
+    	};
+    	memoryhistory = Cons(memoryconsumed,memoryhistory);
+    	memoryconsumed = 0;
+
+    	bw = bwnext;
+    	bwnext = case lookup(initconfig, Bandwidth) {
+    	    Nothing => InfRat; Just(v) => Fin(v);
+    	};
+    	bwhistory = Cons(bwconsumed,bwhistory);
+    	bwconsumed = 0;
+
+
+        }
 
     [Atomic] Rat getNumberOfCores() { return numberOfCores; }
 }

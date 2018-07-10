@@ -1,7 +1,7 @@
 module NQueens;
 
-import Functions from Absstdlib;
-import * from Absstdlib;
+//import Functions from Absstdlib;
+import * from ABS.StdLib;
 /*
 
 This Savina benchmark searches for k solutions to the N queens problem.
@@ -75,8 +75,8 @@ class Master (Int numWorkers, Int priorities, Int solutionsLimit, Int threshold,
   	  //println("M: Sending work " + toString(list) + " depth "+ toString(depth)+" priority "+ toString(priority));	
       Fut<Unit> f = nth(workers,messageCounter)!nqueensKernelPar(list,depth,priorities);
       messageCounter = (messageCounter + 1) % numWorkers;
-      await f? ;
-      numWorkCompleted = numWorkCompleted + 1;
+//      await f? ;
+//      numWorkCompleted = numWorkCompleted + 1;
   }
 }
 
