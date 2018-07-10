@@ -1363,7 +1363,7 @@ public class ScalaVisitor {
             auxw.continuationLevel = w.continuationLevel;
             auxw.duplicateReplacements = w.duplicateReplacements;
             returnStmt.getRetExp().accept(this, auxw);
-            w.emitStatement("return ABSFuture.done(" + auxsw.toString() + ")");
+            w.emitStatement("return ABSFuture.done({" + auxsw.toString() + "})");
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -4637,6 +4637,7 @@ public class ScalaVisitor {
 
     private void emitImplicitConversions(ScalaWriter w) throws IOException {
         w.emit(" implicit def f2int(f: Float):Int = f.round.toInt;\n");
+        w.emit(" implicit def f2int(r: Rational):Int = r.toInt;\n");
 
 //
 //     w.emit("implicit def fun2Call[R](f: () => R) = new Callable[R] { def call

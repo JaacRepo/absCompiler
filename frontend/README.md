@@ -30,69 +30,16 @@ Invoke the ABS compiler with
 This will type-check the given input files and output a list of warnings and
 errors.
 
-## Using the Erlang backend ##
+## Using the Java/Scala backend ##
 
-Compile to Erlang with
+Note that the Scala backend is still in development right now.
 
-      bin/bash/absc -erlang [options] <absfiles>
+Compile to Scala with
 
-The output will be put in `gen/erl`.
+    bin/bash/absc -scala <absfiles>
 
-A model can be started with two different commands, both of which are
-generated inside `gen/erl`:
+This will generate a package for each module in ../generated-sources/jabsc/.
+You can make this directory the root of an eclipse or Intellij (with Scala extension installed) project in which you have the API provided at
+https://github.com/JaacRepo/JAAC.git
 
-    $ gen/erl/run
-    $ gen/erl/start_console
-
-The command `run` launches an Erlang script that terminates after the model
-terminates; `start_console` launches an Erlang shell and executes the given
-main module, offering an Erlang prompt afterwards.
-
-Running `gen/erl/run -h` gives a list of command-line options.
-
-
-## Using the Maude backend ##
-
-Compile to Maude with
-
-    bin/bash/absc -maude <absfiles> -o <file.maude>
-
-To run the model, start Maude and load the compiled model with `in
-<file.maude>`.
-
-After loading the model into Maude, start it with the command
-
-    rew start .
-
-(This assumes that the model terminates - if it does not, you can
-restrict the number of rewrite steps via the usual options to the
-`rew` or `frew` command.)
-
-
-## Using the Java backend ##
-
-Note that the Java backend is only partly maintained; not all valid ABS models
-will compile or run.
-
-Compile to Java with
-
-    bin/bash/absc -java [options] [-d <dir>] <absfiles>
-
-OR
-
-    java -cp dist/absfrontend.jar abs.backend.java.JavaBackend [-d <dir>] <absfiles>
-
-This will generate Java source files and corresponding `.class` files into
-`dir`, where additional subdirectories are created for each module.
-
-It is also possible to only generate the Java source files and not the
-`.class` files by using the `-sourceonly` option. In that case the resulting
-Java files have to be compiled by a standard Java compiler. For example,
-
-    find <dir> -name '*.java'|xargs javac -classpath dist/absfrontend.jar
-
-For each module that has a Main block, the generated files contain a class
-`ModuleName.Main` with a standard `main` method, which can be executed like a
-standard Java program, e.g.:
-
-    java -cp dist/absfrontend.jar:<dir> MyModule.Main
+You should then be able to run the Main object from the module in which the main block was located
