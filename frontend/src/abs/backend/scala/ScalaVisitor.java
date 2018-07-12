@@ -1141,7 +1141,8 @@ public class ScalaVisitor {
             }
             Set<Modifier> modifiers = Sets.newHashSet(Modifier.PUBLIC, Modifier.STATIC);
 
-            w.beginMethod(methodType, methodName, modifiers, parameters.toArray(new String[0]));
+            w.beginMethod(methodType.equals("Void")?null:methodType, methodName, modifiers, parameters.toArray(new String[0]));
+
             createMethodDefinition(methodType, methodName, parameters);
 
             if(fbody instanceof BuiltinFunctionDef){
@@ -1162,7 +1163,10 @@ public class ScalaVisitor {
 
                 pe.accept(this, auxjw);
                 String stm = sw.toString();
-                w.emitStatement("return %s", stm);
+                if(methodType.equals("Void"))
+                    w.emitStatement("%s", stm);
+                else
+                    w.emitStatement("return %s", stm);
 
             }
             variablesInScope.pop();
@@ -2085,8 +2089,13 @@ public class ScalaVisitor {
     public void visit(FnApp cons, ScalaWriter w) {
         try {
 
-            String functionName = cons.getName();
+            String pack = cons.getDecl().getModuleDecl().getName();
+            StringBuilder functionN =  new StringBuilder(cons.getName());
 
+            if(!pack.equals("ABS.StdLib"))
+                functionN.insert(0,pack+".Functions.");
+
+            String functionName = functionN.toString();
             List<String> parameters = new ArrayList<>();
             for (PureExp param : cons.getParams()) {
                 StringWriter psw = new StringWriter();
@@ -4042,7 +4051,12 @@ public class ScalaVisitor {
             }
         } else {
 
-            String potentialReturnType = String.format("%s[%s]", ABSFUTURE_CLASS, resultVarType);
+            StringWriter tsw = new StringWriter();
+            ScalaWriter tw = new ScalaWriter(tsw);
+            smc.getType().toUse().accept(this,tw);
+
+            String methodRet = tsw.toString();
+            String potentialReturnType = String.format("%s[%s]", ABSFUTURE_CLASS, methodRet);
             String msgVar = createMessageVariableName(calleeId);
 
             resultVarName = getDuplicate(resultVarName, w);
@@ -4093,7 +4107,7 @@ public class ScalaVisitor {
             if (callHasAwait(smc, methodName)) {
                 String awaitCall = generateContinuationMethodInvocation("this", label.toString(), w, 'w', awaitCounter, true);
 
-                visitSyncMethodCall_Async(msgVar, resultVarType, resultVarName, w, awaitCall, false);
+                visitSyncMethodCall_Async(msgVar, methodRet, resultVarName, w, awaitCall, false);
             } else {
                 if (!calleeId.equals(LITERAL_THIS)) {
 
@@ -4119,7 +4133,7 @@ public class ScalaVisitor {
                 String message = String.format("()=>%s", javaMethodCall);
                 String sendStatement = generateMessageInvocationStatement(calleeId, true, potentialReturnType, message, msgVar, w);
                 w.emitStatement(sendStatement);
-                visitSyncMethodCall_Async(msgVar, resultVarType, resultVarName, w, awaitCall, true);
+                visitSyncMethodCall_Async(msgVar, methodRet, resultVarName, w, awaitCall, true);
 
 
                 w.endControlFlow();

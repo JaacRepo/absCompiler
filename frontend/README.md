@@ -38,7 +38,7 @@ Compile to Scala with
 
     bin/bash/absc -scala <absfiles>
 
-This will generate a package for each module in ../generated-sources/jabsc/.
+This will generate a package for each module in ../generated-sources/jabsc/. From this directory remove the ABS.JUnit, ABS.Meta and ABS.Scheduler as they are not currently supported by the backend.
 You can make this directory the root of an eclipse or Intellij (with Scala extension installed) project in which you have the API provided at
 https://github.com/JaacRepo/JAAC.git
 

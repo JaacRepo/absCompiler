@@ -382,10 +382,12 @@ public class ScalaWriter extends JavaWriter {
         if (returnType != null) {
             out.write(": ");
             emitCompressedType(returnType);
-            out.write("");
         }
+         else
+             out.write("");
 
-        if (returnType.equals("ABSFuture[Void]")
+
+        if (returnType!=null && returnType.equals("ABSFuture[Void]")
                 && (!(modifiers.contains(ABSTRACT) || Scope.INTERFACE_DECLARATION.equals(scopes.peek())))) {
             voidMethod = true;
         }
