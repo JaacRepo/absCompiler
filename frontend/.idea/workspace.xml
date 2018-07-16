@@ -15,12 +15,12 @@
       <file leaf-file-name="ScalaVisitor.java" pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/src/abs/backend/scala/ScalaVisitor.java">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="569">
-              <caret line="2111" column="34" selection-start-line="2111" selection-start-column="34" selection-end-line="2111" selection-end-column="34" />
+            <state relative-caret-position="303">
+              <caret line="4209" column="16" selection-start-line="4209" selection-start-column="16" selection-end-line="4209" selection-end-column="16" />
               <folding>
                 <element signature="imports" expanded="true" />
-                <element signature="e#189583#189584#0" expanded="true" />
-                <element signature="e#189625#189626#0" expanded="true" />
+                <element signature="e#93765#93766#0" expanded="true" />
+                <element signature="e#93824#93825#0" expanded="true" />
               </folding>
             </state>
           </provider>
@@ -38,7 +38,7 @@
       <file leaf-file-name="ScalaWriter.java" pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/src/abs/backend/scala/ScalaWriter.java">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="688">
+            <state relative-caret-position="5565">
               <caret line="386" column="13" selection-start-line="386" selection-start-column="13" selection-end-line="386" selection-end-column="13" />
             </state>
           </provider>
@@ -51,6 +51,9 @@
       <find>visitSyncMethodCall_Async</find>
       <find>visitAsyncMethodCall</find>
       <find>asyncPCounter</find>
+      <find>data coll</find>
+      <find>.isScope</find>
+      <find>syncPCounter</find>
     </findStrings>
   </component>
   <component name="IdeDocumentHistory">
@@ -78,8 +81,8 @@
       <foldersAlwaysOnTop value="true" />
     </navigator>
     <panes>
+      <pane id="AndroidView" />
       <pane id="Scope" />
-      <pane id="PackagesPane" />
       <pane id="ProjectPane">
         <subPane>
           <expand>
@@ -91,7 +94,7 @@
           <select />
         </subPane>
       </pane>
-      <pane id="AndroidView" />
+      <pane id="PackagesPane" />
     </panes>
   </component>
   <component name="RecentsManager">
@@ -175,6 +178,7 @@
   </component>
   <component name="ToolWindowManager">
     <frame x="181" y="85" width="2334" height="1274" extended-state="0" />
+    <editor active="true" />
     <layout>
       <window_info anchor="right" id="Palette" order="3" />
       <window_info anchor="bottom" id="TODO" order="6" />
@@ -188,8 +192,8 @@
       <window_info anchor="bottom" id="Terminal" order="7" />
       <window_info id="Capture Tool" order="2" />
       <window_info id="Designer" order="2" />
-      <window_info active="true" content_ui="combo" id="Project" order="0" sideWeight="0.4995587" visible="true" weight="0.24934383" />
-      <window_info id="Structure" order="1" sideWeight="0.5004413" side_tool="true" visible="true" weight="0.24934383" />
+      <window_info active="true" content_ui="combo" id="Project" order="0" sideWeight="0.49602824" visible="true" weight="0.25940508" />
+      <window_info id="Structure" order="1" sideWeight="0.50397176" side_tool="true" visible="true" weight="0.25940508" />
       <window_info anchor="right" id="Ant Build" order="1" weight="0.25" />
       <window_info id="UI Designer" order="2" />
       <window_info anchor="right" id="Theme Preview" order="3" />
@@ -216,12 +220,64 @@
   <component name="editorHistoryManager">
     <entry file="file://$PROJECT_DIR$/src/abs/backend/scala/ScalaVisitor.java">
       <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="59565">
+          <caret line="3971" selection-start-line="3971" selection-end-line="3971" />
+          <folding>
+            <element signature="imports" expanded="true" />
+            <element signature="e#93765#93766#0" expanded="true" />
+            <element signature="e#93824#93825#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/README.md">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="600">
+          <caret line="40" column="197" selection-start-line="40" selection-start-column="197" selection-end-line="40" selection-end-column="197" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/src/abs/backend/scala/ScalaWriter.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="5790">
+          <caret line="386" column="13" selection-start-line="386" selection-start-column="13" selection-end-line="386" selection-end-column="13" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/src/abs/backend/scala/ScalaVisitor.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="31665">
+          <caret line="2111" column="34" selection-start-line="2111" selection-start-column="34" selection-end-line="2111" selection-end-column="34" />
+          <folding>
+            <element signature="imports" expanded="true" />
+            <element signature="e#93765#93766#0" expanded="true" />
+            <element signature="e#93824#93825#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/README.md">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="600">
+          <caret line="40" column="197" selection-start-line="40" selection-start-column="197" selection-end-line="40" selection-end-column="197" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/src/abs/backend/scala/ScalaWriter.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="5790">
+          <caret line="386" column="13" selection-start-line="386" selection-start-column="13" selection-end-line="386" selection-end-column="13" />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/src/abs/backend/scala/ScalaVisitor.java">
+      <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="58710">
           <caret line="3914" column="122" lean-forward="true" selection-start-line="3914" selection-start-column="122" selection-end-line="3914" selection-end-column="122" />
           <folding>
             <element signature="imports" expanded="true" />
-            <element signature="e#189583#189584#0" expanded="true" />
-            <element signature="e#189625#189626#0" expanded="true" />
+            <element signature="e#93765#93766#0" expanded="true" />
+            <element signature="e#93824#93825#0" expanded="true" />
           </folding>
         </state>
       </provider>
@@ -232,8 +288,8 @@
           <caret line="4639" column="66" selection-start-line="4639" selection-start-column="15" selection-end-line="4639" selection-end-column="66" />
           <folding>
             <element signature="imports" expanded="true" />
-            <element signature="e#189583#189584#0" expanded="true" />
-            <element signature="e#189625#189626#0" expanded="true" />
+            <element signature="e#93765#93766#0" expanded="true" />
+            <element signature="e#93824#93825#0" expanded="true" />
           </folding>
         </state>
       </provider>
@@ -243,8 +299,8 @@
         <state>
           <folding>
             <element signature="imports" expanded="true" />
-            <element signature="e#189583#189584#0" expanded="true" />
-            <element signature="e#189625#189626#0" expanded="true" />
+            <element signature="e#93765#93766#0" expanded="true" />
+            <element signature="e#93824#93825#0" expanded="true" />
           </folding>
         </state>
       </provider>
@@ -283,8 +339,8 @@
           <caret line="130" column="58" selection-start-line="130" selection-start-column="58" selection-end-line="130" selection-end-column="58" />
           <folding>
             <element signature="imports" expanded="true" />
-            <element signature="e#189583#189584#0" expanded="true" />
-            <element signature="e#189625#189626#0" expanded="true" />
+            <element signature="e#93765#93766#0" expanded="true" />
+            <element signature="e#93824#93825#0" expanded="true" />
           </folding>
         </state>
       </provider>
@@ -330,8 +386,8 @@
           <caret line="130" column="58" selection-start-line="130" selection-start-column="58" selection-end-line="130" selection-end-column="58" />
           <folding>
             <element signature="imports" expanded="true" />
-            <element signature="e#189583#189584#0" expanded="true" />
-            <element signature="e#189625#189626#0" expanded="true" />
+            <element signature="e#93765#93766#0" expanded="true" />
+            <element signature="e#93824#93825#0" expanded="true" />
           </folding>
         </state>
       </provider>
@@ -377,8 +433,8 @@
           <caret line="130" column="58" selection-start-line="130" selection-start-column="58" selection-end-line="130" selection-end-column="58" />
           <folding>
             <element signature="imports" expanded="true" />
-            <element signature="e#189583#189584#0" expanded="true" />
-            <element signature="e#189625#189626#0" expanded="true" />
+            <element signature="e#93765#93766#0" expanded="true" />
+            <element signature="e#93824#93825#0" expanded="true" />
           </folding>
         </state>
       </provider>
@@ -420,8 +476,8 @@
           <caret line="130" column="58" lean-forward="true" selection-start-line="130" selection-start-column="58" selection-end-line="130" selection-end-column="58" />
           <folding>
             <element signature="imports" expanded="true" />
-            <element signature="e#189583#189584#0" expanded="true" />
-            <element signature="e#189625#189626#0" expanded="true" />
+            <element signature="e#93765#93766#0" expanded="true" />
+            <element signature="e#93824#93825#0" expanded="true" />
           </folding>
         </state>
       </provider>
@@ -453,8 +509,8 @@
           <caret line="147" column="75" selection-start-line="147" selection-start-column="75" selection-end-line="147" selection-end-column="75" />
           <folding>
             <element signature="imports" expanded="true" />
-            <element signature="e#189583#189584#0" expanded="true" />
-            <element signature="e#189625#189626#0" expanded="true" />
+            <element signature="e#93765#93766#0" expanded="true" />
+            <element signature="e#93824#93825#0" expanded="true" />
           </folding>
         </state>
       </provider>
@@ -549,13 +605,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/src/abs/backend/scala/ScalaWriter.java">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="688">
-          <caret line="386" column="13" selection-start-line="386" selection-start-column="13" selection-end-line="386" selection-end-column="13" />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/README.md">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="600">
@@ -563,14 +612,21 @@
         </state>
       </provider>
     </entry>
+    <entry file="file://$PROJECT_DIR$/src/abs/backend/scala/ScalaWriter.java">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="5565">
+          <caret line="386" column="13" selection-start-line="386" selection-start-column="13" selection-end-line="386" selection-end-column="13" />
+        </state>
+      </provider>
+    </entry>
     <entry file="file://$PROJECT_DIR$/src/abs/backend/scala/ScalaVisitor.java">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="569">
-          <caret line="2111" column="34" selection-start-line="2111" selection-start-column="34" selection-end-line="2111" selection-end-column="34" />
+        <state relative-caret-position="303">
+          <caret line="4209" column="16" selection-start-line="4209" selection-start-column="16" selection-end-line="4209" selection-end-column="16" />
           <folding>
             <element signature="imports" expanded="true" />
-            <element signature="e#189583#189584#0" expanded="true" />
-            <element signature="e#189625#189626#0" expanded="true" />
+            <element signature="e#93765#93766#0" expanded="true" />
+            <element signature="e#93824#93825#0" expanded="true" />
           </folding>
         </state>
       </provider>

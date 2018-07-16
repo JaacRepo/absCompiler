@@ -371,7 +371,7 @@ public class ScalaVisitor {
             visit(module, w);
             modules.pop();
         }
-        //System.out.println(programMethods);
+        //System.out.println(programMethods);f
 
 
     }
@@ -478,7 +478,7 @@ public class ScalaVisitor {
             if (m.hasBlock())
                 visitMain(m, w);
 
-            System.out.println("Data Collisions " + dataCollisions);
+            //System.out.println("Data Collisions " + dataCollisions);
 
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -835,10 +835,10 @@ public class ScalaVisitor {
             p.getAccess().accept(this, mtw);
 
             String fieldType = mtsw.toString();
-            if(p.getName().equals("exclusion")) {
+            /*if(p.getName().equals("exclusion")) {
                 System.out.println(p.getAccess() + " exclusion");
                 System.out.println(javaTypeTranslator.abstractTypes);
-            }
+            }*/
 
             String fieldName = javaTypeTranslator.translateKeyword(p.getName());
 
@@ -3150,8 +3150,8 @@ public class ScalaVisitor {
             as.accept(this, scopew);
 
             awaitCounter = tmp;
-            syncPCounter = tmpS;
-            asyncPCounter = tmpA;
+            //syncPCounter = tmpS;
+            //asyncPCounter = tmpA;
 
             if (as instanceof WhileStmt) {
                 WhileStmt sw = (WhileStmt) as;
@@ -3963,8 +3963,13 @@ public class ScalaVisitor {
                 responseVarName, w);
         w.emit(sendStm, true);
         w.emitStatementEnd();
-        if (!w.isScope && !w.checkAwaits)
+        if(calleeId.equals("zmstLeft"))
+            System.out.println("Counter is "+asyncPCounter+ w.isScope);
+        if (!w.checkAwaits)
             asyncPCounter++;
+        if(calleeId.equals("zmstLeft"))
+            System.out.println("Counter is now "+asyncPCounter);
+
     }
 
     protected void visitGet(GetExp g, String resultVarType, String resultVarName, final boolean isDefined,
