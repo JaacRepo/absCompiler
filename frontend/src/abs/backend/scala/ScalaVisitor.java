@@ -144,6 +144,7 @@ public class ScalaVisitor {
             Function.class.getPackage().getName() + ALL_IMPORTS, Callable.class.getPackage().getName() + ALL_IMPORTS,
             AtomicLong.class.getPackage().getName() + ALL_IMPORTS, Lock.class.getPackage().getName() + ALL_IMPORTS,
             "abs.api.realtime" + ALL_IMPORTS,
+            "abs.api" + ALL_IMPORTS,
             "ABS.DC"+ALL_IMPORTS,
             // LocalActor.class.getPackage().getName() + ALL_IMPORTS,
             // "absstdlib.Functions" + ALL_IMPORTS, "absstdlib" + ALL_IMPORTS,
@@ -2107,13 +2108,13 @@ public class ScalaVisitor {
             }
             // if (fromCase)
             // caseKey = findMethodReturnType(name, "Functions", params);
-            w.emit(functionName.equals("toString") ? "" : functionName);
+            w.emit(functionName.equals("toString")?"cwi.Functions.toString":functionName);
             w.emit("(");
             if (cons.hasParam()) {
                 w.emit(String.join(COMMA_SPACE, parameters));
             }
             w.emit(functionName.equals("thisDC") ? "this" : ""+
-                    ")" + (functionName.equals("toString") ? ".toString()" : ""));
+                    ")" /*+ (functionName.equals("toString") ? ".toString()" : "")*/);
 
         } catch (IOException e) {
             throw new RuntimeException(e);
