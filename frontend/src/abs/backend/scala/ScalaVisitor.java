@@ -372,7 +372,7 @@ public class ScalaVisitor {
             visit(module, w);
             modules.pop();
         }
-        //System.out.println(programMethods);f
+
 
 
     }
@@ -508,6 +508,7 @@ public class ScalaVisitor {
             System.out.println("DONE Checking awaits ");
 
         } while (awaitsDetected);
+
     }
 
     public void visit(NamedImport p, ScalaWriter w) {
@@ -805,7 +806,6 @@ public class ScalaVisitor {
                         String qname = cpi.getModuleDecl().getName() + "." + cpi.getName();
                         if (checkAwait(sig.getName(), qname)) {
                             String key = cpi.getModuleDecl().getName() + "." + it.getSimpleName() + "." + sig.getName();
-                            System.out.println(key);
                             programMethods.get(key).setContainsAwait(true);
                         }
                     }
@@ -3964,12 +3964,8 @@ public class ScalaVisitor {
                 responseVarName, w);
         w.emit(sendStm, true);
         w.emitStatementEnd();
-        if(calleeId.equals("zmstLeft"))
-            System.out.println("Counter is "+asyncPCounter+ w.isScope);
         if (!w.checkAwaits)
             asyncPCounter++;
-        if(calleeId.equals("zmstLeft"))
-            System.out.println("Counter is now "+asyncPCounter);
 
     }
 
@@ -4057,6 +4053,9 @@ public class ScalaVisitor {
             }
         } else {
 
+            if(methodName.equals("process")) {
+                System.out.println("Method: " + methodName + callHasAwait(smc, methodName));
+            }
             StringWriter tsw = new StringWriter();
             ScalaWriter tw = new ScalaWriter(tsw);
             smc.getType().toUse().accept(this,tw);
@@ -4761,6 +4760,15 @@ public class ScalaVisitor {
         String key = qname + "." + methodName;
         if (programMethods.containsKey(key))
             return programMethods.get(key).containsAwait();
+        else{
+            int endPoint = qname.lastIndexOf('.')+1;
+            StringBuilder k = new StringBuilder(qname.substring(0, endPoint));
+            String coll = translateDataColl(qname.substring(endPoint));
+            k.append(coll);
+            k.append("."+methodName);
+            if (programMethods.containsKey(k.toString()))
+                return programMethods.get(k.toString()).containsAwait();
+        }
         return false;
     }
 
