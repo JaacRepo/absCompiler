@@ -3894,6 +3894,7 @@ public class ScalaVisitor {
         initType = "";
         if (varType == null) {
             w.emit(varName + " = " + auxsw.toString(), true);
+            w.emitStatementEnd();
         } else {
             w.emitField(varType, varName, new HashSet<>(), auxsw.toString());
         }
@@ -3924,6 +3925,11 @@ public class ScalaVisitor {
                     try {
                         //w.emitStatement("var %s: %s=>%s = (%s)=>%s", label + "m", type, currentMethod.type(), valueName,
                          //       methodCall);
+                        if(fromConstructor)
+                            w.emitStatement("%s.%s = getSpawn(%s.%s, (%s)=>%s, %s.HIGH_PRIORITY, false)",LITERAL_THIS, CONS_FUT, varName, GET_CONSTRUCTOR_FUTURE, valueName, methodCall,
+                                    ABS_API_INTERFACE_CLASS);
+                        else
+
                         w.emitStatement("return getSpawn(%s.%s, (%s)=>%s, %s.HIGH_PRIORITY, false)", varName, GET_CONSTRUCTOR_FUTURE, valueName, methodCall,
                                 ABS_API_INTERFACE_CLASS);
                         w.avoiddc = true;
@@ -4053,9 +4059,6 @@ public class ScalaVisitor {
             }
         } else {
 
-            if(methodName.equals("process")) {
-                System.out.println("Method: " + methodName + callHasAwait(smc, methodName));
-            }
             StringWriter tsw = new StringWriter();
             ScalaWriter tw = new ScalaWriter(tsw);
             smc.getType().toUse().accept(this,tw);
