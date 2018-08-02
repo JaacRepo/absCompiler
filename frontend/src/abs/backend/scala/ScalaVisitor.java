@@ -54,10 +54,10 @@ public class ScalaVisitor {
     private static final String CONS_FUT = "constructorFuture";
     public static final String GET_CONSTRUCTOR_FUTURE = "getConstructorFuture";
     public static final String INSTANCE_OF = "asInstanceOf";
-    public static final String DEPLOYMENT_COMPONENT = "DeploymentComponent";
+    //public static final String DEPLOYMENT_COMPONENT = "DeploymentComponent";
     public static final String MOVE_TO_COG = "moveToCOG";
-    public static final String SET_DC = "setDc";
-    public static final String CLASS_DC = "ClassDeploymentComponent";
+    //public static final String SET_DC = "setDc";
+    //public static final String CLASS_DC = "ClassDeploymentComponent";
     private boolean fromConstructor=false;
     private boolean hasRun=false;
 
@@ -746,8 +746,8 @@ public class ScalaVisitor {
             parameters.add(ABS_API_ACTOR_CLASS);
             parameters.add("destCOG");
 
-            parameters.add(ABS_API_INTERFACE_CLASS);
-            parameters.add("destDC");
+            //parameters.add(ABS_API_INTERFACE_CLASS);
+            //parameters.add("destDC");
 
 
             if (cpi.hasParam()) {
@@ -786,7 +786,7 @@ public class ScalaVisitor {
 
             w.beginConstructor();
             w.emitStatement("%s(%s)", MOVE_TO_COG, parameters.get(1));
-            w.emitStatement("%s(%s)", SET_DC, parameters.get(3));
+            //w.emitStatement("%s(%s)", SET_DC, parameters.get(3));
 
             if (cpi.hasInitBlock()) {
                 InitBlock ib = cpi.getInitBlock();
@@ -1148,7 +1148,8 @@ public class ScalaVisitor {
 
             if(fbody instanceof BuiltinFunctionDef){
                 if(methodName.equals("thisDC")){
-                    w.emitStatement("return %s.%s.%s[%s]", ABS_API_ACTOR_CLASS.toLowerCase(),GET_DC, INSTANCE_OF, DEPLOYMENT_COMPONENT);
+                    w.emitStatement("return %s",LITERAL_NULL);
+                    //w.emitStatement("return %s.%s.%s[%s]", ABS_API_ACTOR_CLASS.toLowerCase(),GET_DC, INSTANCE_OF, DEPLOYMENT_COMPONENT);
                 }
 
             }
@@ -1231,7 +1232,8 @@ public class ScalaVisitor {
                     parameters.toArray(new String[0]));
             if(fbody instanceof BuiltinFunctionDef){
                 if(methodName.equals("thisDC")){
-                    w.emitStatement("return %s.%s.%s[%s]", ABS_API_ACTOR_CLASS.toLowerCase(),GET_DC, INSTANCE_OF, DEPLOYMENT_COMPONENT);
+                    w.emitStatement("return %s",LITERAL_NULL);
+                    //w.emitStatement("return %s.%s.%s[%s]", ABS_API_ACTOR_CLASS.toLowerCase(),GET_DC, INSTANCE_OF, DEPLOYMENT_COMPONENT);
                 }
 
             } else if (fbody instanceof ExpFunctionDef) {
@@ -1871,27 +1873,31 @@ public class ScalaVisitor {
             }
             String parametersString = String.join(COMMA_SPACE, parameters);
             if (n.hasLocal()) {
-                w.emit("new " + name + "(this, getDc() " + (parametersString.length() == 0 ? "" : ", ") + parametersString
+                w.emit("new " + name + "(this " + (parametersString.length() == 0 ? "" : ", ") + parametersString
                         + ")");
+                //w.emit("new " + name + "(this, getDc() " + (parametersString.length() == 0 ? "" : ", ") + parametersString
+                //        + ")");
             } else {
-                if(isNewDC)
-                    w.emit("new " + name + "(null, null " + (parametersString.length() == 0 ? "" : ", ") + parametersString
+//                if(isNewDC)
+//                    w.emit("new " + name + "(null, null " + (parametersString.length() == 0 ? "" : ", ") + parametersString
+//                            + ")");
+//                else{
+                    {w.emit("new " + name + "(this " + (parametersString.length() == 0 ? "" : ", ") + parametersString
                             + ")");
-                else{
-                    if(dc==null)
-                        w.emit("new " + name + "(null, getDc() " + (parametersString.length() == 0 ? "" : ", ") + parametersString
-                        + ")");
-                    else {
-                        StringWriter dcsw = new StringWriter();
-                        ScalaWriter dcw = new ScalaWriter(dcsw);
-                        dcw.continuationLevel = w.continuationLevel;
-                        dcw.duplicateReplacements = w.duplicateReplacements;
-                        dc.accept(this, dcw);
-
-                        w.emit("new " + name + "(null, " + dcsw.toString()+ ", " + (parametersString.length() == 0 ? "" : ", ") + parametersString
-                                + ")");
+                       // w.emit("new " + name + "(null, getDc() " + (parametersString.length() == 0 ? "" : ", ") + parametersString
+                         //       + ")");
                     }
-                }
+//                    else {
+//                        StringWriter dcsw = new StringWriter();
+//                        ScalaWriter dcw = new ScalaWriter(dcsw);
+//                        dcw.continuationLevel = w.continuationLevel;
+//                        dcw.duplicateReplacements = w.duplicateReplacements;
+//                        dc.accept(this, dcw);
+//
+//                        w.emit("new " + name + "(null, " + dcsw.toString()+ ", " + (parametersString.length() == 0 ? "" : ", ") + parametersString
+//                                + ")");
+//                    }
+                //}
             }
 
             /*
@@ -3827,7 +3833,7 @@ public class ScalaVisitor {
             // jw.emitStatement("%s.init()",
             // DeploymentComponent.class.getName());
 
-            jw.emitStatement("new %s(%s,%s, %s, EmptyMap[Resourcetype,Rational]);\n", CLASS_DC, LITERAL_NULL, LITERAL_NULL, "\"Main\"" );
+            //jw.emitStatement("new %s(%s,%s, %s, EmptyMap[Resourcetype,Rational]);\n", CLASS_DC, LITERAL_NULL, LITERAL_NULL, "\"Main\"" );
 
             m.getBlock().accept(this, jw);
 
