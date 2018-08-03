@@ -1761,7 +1761,7 @@ public class ScalaVisitor {
             maxw.duplicateReplacements = w.duplicateReplacements;
             e.getMax().accept(this, maxw);
 
-            w.emit(String.format("Array(%s.toInt,%s.toInt)", minsw, maxsw));
+            w.emit(String.format("Array(Util.Functions.round(%s),Util.Functions.round(%s))", minsw, maxsw));
 
         } catch (IOException ex) {
             // TODO Auto-generated catch block
