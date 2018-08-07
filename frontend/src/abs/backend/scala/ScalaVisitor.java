@@ -4822,7 +4822,13 @@ public class ScalaVisitor {
         // System.out.println("amc calee writer "+ auxw.duplicateReplacements);
         amc.getCallee().accept(this, auxw);
         String calleeId = auxsw.toString();
-        return calleeId;
+        String variable = "Actor"+Math.abs(calleeId.hashCode());
+        try {
+            w.emitStatement("val %s = %s", variable, calleeId);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return variable;
     }
 
     protected String getCalleeId(SyncCall smc, ScalaWriter w) {
