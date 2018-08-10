@@ -54,12 +54,14 @@ public class ScalaVisitor {
     private static final String CONS_FUT = "constructorFuture";
     public static final String GET_CONSTRUCTOR_FUTURE = "getConstructorFuture";
     public static final String INSTANCE_OF = "asInstanceOf";
+    public static Boolean withDC = false;
     //public static final String DEPLOYMENT_COMPONENT = "DeploymentComponent";
     public static final String MOVE_TO_COG = "moveToCOG";
     //public static final String SET_DC = "setDc";
     //public static final String CLASS_DC = "ClassDeploymentComponent";
-    private boolean fromConstructor=false;
-    private boolean hasRun=false;
+    private boolean fromConstructor = false;
+
+    private boolean hasRun = false;
 
     static enum AbsElementType {
         /**
@@ -107,7 +109,7 @@ public class ScalaVisitor {
     private static final String COMMA_SPACE = ", ";
     private static final String METHOD_GET = "geT";
     private static final String SYNC_GET = "getCompleted()"; // this is a shortcut
-    private static final String GET_DC="getDc()";
+    private static final String GET_DC = "getDc()";
     // to optimize those
     // calls that are
     // synchronous and
@@ -145,7 +147,7 @@ public class ScalaVisitor {
             AtomicLong.class.getPackage().getName() + ALL_IMPORTS, Lock.class.getPackage().getName() + ALL_IMPORTS,
             "abs.api.realtime" + ALL_IMPORTS,
             "abs.api" + ALL_IMPORTS,
-            "ABS.DC"+ALL_IMPORTS,
+            "ABS.DC" + ALL_IMPORTS,
             // LocalActor.class.getPackage().getName() + ALL_IMPORTS,
             // "absstdlib.Functions" + ALL_IMPORTS, "absstdlib" + ALL_IMPORTS,
             // "scala.collection.mutable.Set",
@@ -194,7 +196,7 @@ public class ScalaVisitor {
     private final ScalaTypeTranslator javaTypeTranslator;
     private final Path outputDirectory;
     private final String[] ignoreCodeGen = new String[]{"Rat", "Bool", "Int", "Fut", "True", "False", "Unit", "Float",
-            "String", "Exception", "numerator", "denominator", "truncate", "random", "substr", "log","exp","sqrt", "float", "rat", "floor", "ceil", "strlen", "toString",
+            "String", "Exception", "numerator", "denominator", "truncate", "random", "substr", "log", "exp", "sqrt", "float", "rat", "floor", "ceil", "strlen", "toString",
             "print", "println", "readln", "currentms", "watch", "watchEx", "lowlevelDeadline"};// ,
     // "currentms"
     // };
@@ -259,7 +261,7 @@ public class ScalaVisitor {
 
     private final Map<String, String> caseMap = new HashMap<>();
 
-    private MethodDefinition currentMethod=null;
+    private MethodDefinition currentMethod = null;
 
     public boolean awaitsDetected = false;
 
@@ -372,7 +374,6 @@ public class ScalaVisitor {
             visit(module, w);
             modules.pop();
         }
-
 
 
     }
@@ -622,8 +623,8 @@ public class ScalaVisitor {
 
                 String returnType = String.format("%s[%s]", ABSFUTURE_CLASS, auxsw.toString());
                 String name = ms.getName().equals(METHOD_GET) ? "get" : ms.getName();
-                if(name.equals("run")) {
-                    System.out.println("Found run in"+ currentClass());
+                if (name.equals("run")) {
+                    System.out.println("Found run in" + currentClass());
                     hasRun = true;
                 }
                 List<String> parameterTypes = new ArrayList<>();
@@ -653,8 +654,8 @@ public class ScalaVisitor {
                 String returnType = String.format("%s[%s]", ABSFUTURE_CLASS, auxsw.toString());
                 String name = ms.getName().equals(METHOD_GET) ? "get" : ms.getName();
 
-                if(name.equals("run")) {
-                    System.out.println("Found run in"+ currentClass());
+                if (name.equals("run")) {
+                    System.out.println("Found run in" + currentClass());
                     hasRun = true;
                 }
 
@@ -726,7 +727,7 @@ public class ScalaVisitor {
 
                 }
                 currentMethodLabels.clear();
-                currentMethod=null;
+                currentMethod = null;
 
                 w.emitEmptyLine();
             }
@@ -739,7 +740,7 @@ public class ScalaVisitor {
     public void visit(ClassDecl cpi, ScalaWriter w) {
         //TODO looke at new first then do cpi.getAnnotationList() look ABS.Scheduler.Scheduler. If it exists, cast to FnApp, and then apply it.
         try {
-            hasRun=false;
+            hasRun = false;
             final String className = dataCollisions.containsKey(cpi.getName()) ? dataCollisions.get(cpi.getName())
                     : cpi.getName();
             LinkedList<String> parameters = new LinkedList<>();
@@ -778,7 +779,6 @@ public class ScalaVisitor {
             }
 
 
-
             for (MethodImpl cb : cpi.getMethods()) {
 
                 cb.accept(this, w);
@@ -790,14 +790,14 @@ public class ScalaVisitor {
 
             if (cpi.hasInitBlock()) {
                 InitBlock ib = cpi.getInitBlock();
-                ib.accept(this,w);
+                ib.accept(this, w);
             }
-            if(hasRun)
+            if (hasRun)
                 w.emitStatement("%s.%s(()=>%s.run())", LITERAL_THIS, "send", LITERAL_THIS);
-            hasRun=false;
+            hasRun = false;
             w.endConstructor();
 
-            if(!w.checkAwaits) {
+            if (!w.checkAwaits) {
                 for (InterfaceTypeUse itu :
                         cpi.getImplementedInterfaceUses()) {
                     InterfaceType it = (InterfaceType) itu.getType();
@@ -892,7 +892,7 @@ public class ScalaVisitor {
                                 parentDataInterface, null, new ArrayList<>(), false);
                     } else
 
-                    beginElementKind(w, ElementKind.OTHER, constrIdent.getName(), DEFAULT_MODIFIERS,
+                        beginElementKind(w, ElementKind.OTHER, constrIdent.getName(), DEFAULT_MODIFIERS,
                                 parentDataInterface, null, new ArrayList<>(), false);
 
                     emitField(w, "Int", "rank", String.valueOf(rank++), true);
@@ -1142,18 +1142,17 @@ public class ScalaVisitor {
             }
             Set<Modifier> modifiers = Sets.newHashSet(Modifier.PUBLIC, Modifier.STATIC);
 
-            w.beginMethod(methodType.equals("Void")?null:methodType, methodName, modifiers, parameters.toArray(new String[0]));
+            w.beginMethod(methodType.equals("Void") ? null : methodType, methodName, modifiers, parameters.toArray(new String[0]));
 
             createMethodDefinition(methodType, methodName, parameters);
 
-            if(fbody instanceof BuiltinFunctionDef){
-                if(methodName.equals("thisDC")){
-                    w.emitStatement("return %s",LITERAL_NULL);
+            if (fbody instanceof BuiltinFunctionDef) {
+                if (methodName.equals("thisDC")) {
+                    w.emitStatement("return %s", LITERAL_NULL);
                     //w.emitStatement("return %s.%s.%s[%s]", ABS_API_ACTOR_CLASS.toLowerCase(),GET_DC, INSTANCE_OF, DEPLOYMENT_COMPONENT);
                 }
 
-            }
-            else if (fbody instanceof ExpFunctionDef) {
+            } else if (fbody instanceof ExpFunctionDef) {
                 ExpFunctionDef nfb = (ExpFunctionDef) fbody;
                 abs.frontend.ast.PureExp pe = nfb.getRhs();
 
@@ -1165,7 +1164,7 @@ public class ScalaVisitor {
 
                 pe.accept(this, auxjw);
                 String stm = sw.toString();
-                if(methodType.equals("Void"))
+                if (methodType.equals("Void"))
                     w.emitStatement("%s", stm);
                 else
                     w.emitStatement("return %s", stm);
@@ -1230,9 +1229,9 @@ public class ScalaVisitor {
             }
             w.beginMethod(methodType, methodName + (generics.isEmpty() ? "" : generics), modifiers,
                     parameters.toArray(new String[0]));
-            if(fbody instanceof BuiltinFunctionDef){
-                if(methodName.equals("thisDC")){
-                    w.emitStatement("return %s",LITERAL_NULL);
+            if (fbody instanceof BuiltinFunctionDef) {
+                if (methodName.equals("thisDC")) {
+                    w.emitStatement("return %s", LITERAL_NULL);
                     //w.emitStatement("return %s.%s.%s[%s]", ABS_API_ACTOR_CLASS.toLowerCase(),GET_DC, INSTANCE_OF, DEPLOYMENT_COMPONENT);
                 }
 
@@ -1614,7 +1613,7 @@ public class ScalaVisitor {
                 String name = CONSTRUCTOR;
                 List<String> parameterTypes = new ArrayList<>();
                 createMethodDefinition(returnType, name, parameterTypes);
-                visitMethodBody(b,w);
+                visitMethodBody(b, w);
             } else {
 
                 variablesInScope.clear();
@@ -1637,19 +1636,18 @@ public class ScalaVisitor {
                 w.avoiddc = false;
 
                 //System.out.println("Building method for " + name);
-                fromConstructor=true;
+                fromConstructor = true;
                 for (Stmt annStm : b.getStmts()) {
                     if (!w.avoiddc)
                         annStm.accept(this, w);
 
                 }
-                fromConstructor=false;
-                if(!w.avoiddc)
-                    w.emitStatement("%s =  %s.done()",CONS_FUT, ABSFUTURE_CLASS);
+                fromConstructor = false;
+                if (!w.avoiddc)
+                    w.emitStatement("%s =  %s.done()", CONS_FUT, ABSFUTURE_CLASS);
                 w.avoiddc = false;
 
                 //System.out.println("Done method for " + name);
-
 
 
                 variablesInScope.pop();
@@ -1671,7 +1669,7 @@ public class ScalaVisitor {
 
                 }
                 currentMethodLabels.clear();
-                currentMethod=null;
+                currentMethod = null;
 
                 w.emitEmptyLine();
             }
@@ -1853,11 +1851,10 @@ public class ScalaVisitor {
             //TODO: if a DC is specified, parse a pureExp, assign a parsed DC to the new COG.
             //TODO: n.getType().isDeploymentComponentType()
 
+
             Stmt stmt = CompilerUtils.findStmtForExpression(n);
             PureExp dc = CompilerUtils.getAnnotationValueFromName(stmt.getAnnotations(), "ABS.DC.DC");
             boolean isNewDC = n.getType().isDeploymentComponentType();
-
-
 
 
             List<String> parameters = new ArrayList<>();
@@ -1873,31 +1870,44 @@ public class ScalaVisitor {
             }
             String parametersString = String.join(COMMA_SPACE, parameters);
             if (n.hasLocal()) {
-                w.emit("new " + name + "(this " + (parametersString.length() == 0 ? "" : ", ") + parametersString
-                        + ")");
-                //w.emit("new " + name + "(this, getDc() " + (parametersString.length() == 0 ? "" : ", ") + parametersString
-                //        + ")");
-            } else {
-//                if(isNewDC)
-//                    w.emit("new " + name + "(null, null " + (parametersString.length() == 0 ? "" : ", ") + parametersString
-//                            + ")");
-//                else{
-                    {w.emit("new " + name + "(this " + (parametersString.length() == 0 ? "" : ", ") + parametersString
+                if (!withDC)
+                    w.emit("new " + name + "(this " + (parametersString.length() == 0 ? "" : ", ") + parametersString
                             + ")");
-                       // w.emit("new " + name + "(null, getDc() " + (parametersString.length() == 0 ? "" : ", ") + parametersString
-                         //       + ")");
+                else
+                    w.emit("new " + name + "(this, getDc() " + (parametersString.length() == 0 ? "" : ", ") + parametersString
+                            + ")");
+            } else {
+
+                if (isNewDC) {
+                    if(withDC)
+                    w.emit("new " + name + "(null, null " + (parametersString.length() == 0 ? "" : ", ") + parametersString
+                            + ")");
+                    else
+                        w.emit("new " + name + "(null " + (parametersString.length() == 0 ? "" : ", ") + parametersString
+                                + ")");
+
+                }
+                else {
+                    if (!withDC)
+                        w.emit("new " + name + "(this " + (parametersString.length() == 0 ? "" : ", ") + parametersString
+                                + ")");
+                    else {
+                        if (dc == null)
+                            w.emit("new " + name + "(null, getDc() " + (parametersString.length() == 0 ? "" : ", ") + parametersString
+                                    + ")");
+
+                        else {
+                            StringWriter dcsw = new StringWriter();
+                            ScalaWriter dcw = new ScalaWriter(dcsw);
+                            dcw.continuationLevel = w.continuationLevel;
+                            dcw.duplicateReplacements = w.duplicateReplacements;
+                            dc.accept(this, dcw);
+
+                            w.emit("new " + name + "(null, " + dcsw.toString() + ", " + (parametersString.length() == 0 ? "" : ", ") + parametersString
+                                    + ")");
+                        }
                     }
-//                    else {
-//                        StringWriter dcsw = new StringWriter();
-//                        ScalaWriter dcw = new ScalaWriter(dcsw);
-//                        dcw.continuationLevel = w.continuationLevel;
-//                        dcw.duplicateReplacements = w.duplicateReplacements;
-//                        dc.accept(this, dcw);
-//
-//                        w.emit("new " + name + "(null, " + dcsw.toString()+ ", " + (parametersString.length() == 0 ? "" : ", ") + parametersString
-//                                + ")");
-//                    }
-                //}
+                }
             }
 
             /*
@@ -2063,7 +2073,7 @@ public class ScalaVisitor {
                                 genType.append(argsw.toString() + ",");
                             } else if (arg.isBoundedType()) {
                                 Type bt = ((BoundedType) arg).getBoundType();
-                                if(bt!=null && bt.toUse()!=null) {
+                                if (bt != null && bt.toUse() != null) {
                                     bt.toUse().accept(this, new ScalaWriter(argsw));
                                     genType.append(argsw.toString() + ",");
                                 }
@@ -2097,10 +2107,10 @@ public class ScalaVisitor {
         try {
 
             String pack = cons.getDecl().getModuleDecl().getName();
-            StringBuilder functionN =  new StringBuilder(cons.getName());
+            StringBuilder functionN = new StringBuilder(cons.getName());
 
-            if(!pack.equals("ABS.StdLib"))
-                functionN.insert(0,pack+".Functions.");
+            if (!pack.equals("ABS.StdLib"))
+                functionN.insert(0, pack + ".Functions.");
 
             String functionName = functionN.toString();
             List<String> parameters = new ArrayList<>();
@@ -2114,12 +2124,12 @@ public class ScalaVisitor {
             }
             // if (fromCase)
             // caseKey = findMethodReturnType(name, "Functions", params);
-            w.emit(functionName.equals("toString")?"cwi.Functions.toString":functionName);
+            w.emit(functionName.equals("toString") ? "cwi.Functions.toString" : functionName);
             w.emit("(");
             if (cons.hasParam()) {
                 w.emit(String.join(COMMA_SPACE, parameters));
             }
-            w.emit(functionName.equals("thisDC") ? "this" : ""+
+            w.emit(functionName.equals("thisDC") ? "this" : "" +
                     ")" /*+ (functionName.equals("toString") ? ".toString()" : "")*/);
 
         } catch (IOException e) {
@@ -2369,17 +2379,15 @@ public class ScalaVisitor {
             ScalaWriter lw = new ScalaWriter(lsw);
             lw.continuationLevel = w.continuationLevel;
             lw.duplicateReplacements = w.duplicateReplacements;
-            e.getOperand().accept(this,lw);
-            if(t.getQualifiedName().contains("Rat")) {
-                if(lt.getQualifiedName().contains("Int")){
+            e.getOperand().accept(this, lw);
+            if (t.getQualifiedName().contains("Rat")) {
+                if (lt.getQualifiedName().contains("Int")) {
                     w.emit(String.format(" - new Rational(%s)", lsw));
-                }
-                else {
+                } else {
                     w.emit(" - ");
                     e.getOperand().accept(this, w);
                 }
-            }
-            else{
+            } else {
                 /*if(lt.getQualifiedName().contains("Int")){
                     if(rt.getQualifiedName().contains("Int"))
                         w.emit(String.format("new Rational(%s,%s)", lsw,rsw));
@@ -2394,7 +2402,8 @@ public class ScalaVisitor {
                 }*/
                 w.emit(" - ");
                 e.getOperand().accept(this, w);
-            }w.endExpressionGroup();
+            }
+            w.endExpressionGroup();
         } catch (IOException x) {
             throw new RuntimeException(x);
         }
@@ -2427,19 +2436,17 @@ public class ScalaVisitor {
             ScalaWriter rw = new ScalaWriter(rsw);
             rw.continuationLevel = w.continuationLevel;
             rw.duplicateReplacements = w.duplicateReplacements;
-            e.getLeft().accept(this,lw);
+            e.getLeft().accept(this, lw);
             e.getRight().accept(this, rw);
-            if(t.getQualifiedName().contains("Rat")) {
-                if(lt.getQualifiedName().contains("Int")){
-                    w.emit(String.format("new Rational(%s)*%s", lsw,rsw));
-                }
-                else {
+            if (t.getQualifiedName().contains("Rat")) {
+                if (lt.getQualifiedName().contains("Int")) {
+                    w.emit(String.format("new Rational(%s)*%s", lsw, rsw));
+                } else {
                     e.getLeft().accept(this, w);
                     w.emit(" * ");
                     e.getRight().accept(this, w);
                 }
-            }
-            else{
+            } else {
                 /*if(lt.getQualifiedName().contains("Int")){
                     if(rt.getQualifiedName().contains("Int"))
                         w.emit(String.format("new Rational(%s,%s)", lsw,rsw));
@@ -2477,19 +2484,17 @@ public class ScalaVisitor {
             ScalaWriter rw = new ScalaWriter(rsw);
             rw.continuationLevel = w.continuationLevel;
             rw.duplicateReplacements = w.duplicateReplacements;
-            e.getLeft().accept(this,lw);
+            e.getLeft().accept(this, lw);
             e.getRight().accept(this, rw);
-            if(t.getQualifiedName().contains("Rat")) {
-                if(lt.getQualifiedName().contains("Int")){
-                    w.emit(String.format("new Rational(%s)/%s", lsw,rsw));
-                }
-                else {
+            if (t.getQualifiedName().contains("Rat")) {
+                if (lt.getQualifiedName().contains("Int")) {
+                    w.emit(String.format("new Rational(%s)/%s", lsw, rsw));
+                } else {
                     e.getLeft().accept(this, w);
                     w.emit(" / ");
                     e.getRight().accept(this, w);
                 }
-            }
-            else{
+            } else {
                 /*if(lt.getQualifiedName().contains("Int")){
                     if(rt.getQualifiedName().contains("Int"))
                         w.emit(String.format("new Rational(%s,%s)", lsw,rsw));
@@ -2540,19 +2545,17 @@ public class ScalaVisitor {
             ScalaWriter rw = new ScalaWriter(rsw);
             rw.continuationLevel = w.continuationLevel;
             rw.duplicateReplacements = w.duplicateReplacements;
-            e.getLeft().accept(this,lw);
+            e.getLeft().accept(this, lw);
             e.getRight().accept(this, rw);
-            if(t.getQualifiedName().contains("Rat")) {
-                if(lt.getQualifiedName().contains("Int")){
-                    w.emit(String.format("new Rational(%s) + %s", lsw,rsw));
-                }
-                else {
+            if (t.getQualifiedName().contains("Rat")) {
+                if (lt.getQualifiedName().contains("Int")) {
+                    w.emit(String.format("new Rational(%s) + %s", lsw, rsw));
+                } else {
                     e.getLeft().accept(this, w);
                     w.emit(" + ");
                     e.getRight().accept(this, w);
                 }
-            }
-            else{
+            } else {
                 /*if(lt.getQualifiedName().contains("Int")){
                     if(rt.getQualifiedName().contains("Int"))
                         w.emit(String.format("new Rational(%s,%s)", lsw,rsw));
@@ -2590,19 +2593,17 @@ public class ScalaVisitor {
             ScalaWriter rw = new ScalaWriter(rsw);
             rw.continuationLevel = w.continuationLevel;
             rw.duplicateReplacements = w.duplicateReplacements;
-            e.getLeft().accept(this,lw);
+            e.getLeft().accept(this, lw);
             e.getRight().accept(this, rw);
-            if(t.getQualifiedName().contains("Rat")) {
-                if(lt.getQualifiedName().contains("Int")){
-                    w.emit(String.format("new Rational(%s) - %s", lsw,rsw));
-                }
-                else {
+            if (t.getQualifiedName().contains("Rat")) {
+                if (lt.getQualifiedName().contains("Int")) {
+                    w.emit(String.format("new Rational(%s) - %s", lsw, rsw));
+                } else {
                     e.getLeft().accept(this, w);
                     w.emit(" - ");
                     e.getRight().accept(this, w);
                 }
-            }
-            else{
+            } else {
                 /*if(lt.getQualifiedName().contains("Int")){
                     if(rt.getQualifiedName().contains("Int"))
                         w.emit(String.format("new Rational(%s,%s)", lsw,rsw));
@@ -2686,9 +2687,9 @@ public class ScalaVisitor {
             Type lt = e.getLeft().getType();
             Type rt = e.getRight().getType();
             //if(!t.getQualifiedName().contains("Rat")) {
-                e.getLeft().accept(this, w);
-                w.emit(" < ");
-                e.getRight().accept(this, w);
+            e.getLeft().accept(this, w);
+            w.emit(" < ");
+            e.getRight().accept(this, w);
             /*}
             else{
                 StringWriter lsw = new StringWriter();
@@ -2728,9 +2729,9 @@ public class ScalaVisitor {
             Type lt = e.getLeft().getType();
             Type rt = e.getRight().getType();
             //if(!t.getQualifiedName().contains("Rat")) {
-                e.getLeft().accept(this, w);
-                w.emit(" > ");
-                e.getRight().accept(this, w);
+            e.getLeft().accept(this, w);
+            w.emit(" > ");
+            e.getRight().accept(this, w);
             /*}
             else{
                 StringWriter lsw = new StringWriter();
@@ -2770,9 +2771,9 @@ public class ScalaVisitor {
             Type lt = e.getLeft().getType();
             Type rt = e.getRight().getType();
             //if(!t.getQualifiedName().contains("Rat")) {
-                e.getLeft().accept(this, w);
-                w.emit(" <= ");
-                e.getRight().accept(this, w);
+            e.getLeft().accept(this, w);
+            w.emit(" <= ");
+            e.getRight().accept(this, w);
             /*}
             else{
                 StringWriter lsw = new StringWriter();
@@ -2812,9 +2813,9 @@ public class ScalaVisitor {
             Type lt = e.getLeft().getType();
             Type rt = e.getRight().getType();
             //if(!t.getQualifiedName().contains("Rat")) {
-                e.getLeft().accept(this, w);
-                w.emit(" >= ");
-                e.getRight().accept(this, w);
+            e.getLeft().accept(this, w);
+            w.emit(" >= ");
+            e.getRight().accept(this, w);
             /*}
             else{
                 StringWriter lsw = new StringWriter();
@@ -3032,38 +3033,38 @@ public class ScalaVisitor {
         String typeName = e.getType().getQualifiedName();
         StringWriter sw = new StringWriter();
         ScalaWriter tw = new ScalaWriter(sw);
-        if(e.getType().toUse()!=null) {
+        if (e.getType().toUse() != null) {
             e.getType().toUse().accept(this, tw);
             typeName = sw.toString();
         }
         this.javaTypeTranslator.registerAbstractType(adtName, typeName);
     }
 
-  /*  public void visit(GetLocExp e, ScalaWriter w) {
+    /*  public void visit(GetLocExp e, ScalaWriter w) {
 
-    }
+      }
 
-    public void visit(GetFatherExp e, ScalaWriter w) {
+      public void visit(GetFatherExp e, ScalaWriter w) {
 
-    }
+      }
 
-    public void visit(IncompleteAsyncAccess e, ScalaWriter w) {
+      public void visit(IncompleteAsyncAccess e, ScalaWriter w) {
 
-    }
+      }
 
-    public void visit(IncompleteNewExp e, ScalaWriter w) {
+      public void visit(IncompleteNewExp e, ScalaWriter w) {
 
-    }
+      }
 
-    public void visit(IncompleteStmt e, ScalaWriter w) {
+      public void visit(IncompleteStmt e, ScalaWriter w) {
 
-    }
+      }
 
-    public void visit(IncompleteSyncAccess e, ScalaWriter w) {
+      public void visit(IncompleteSyncAccess e, ScalaWriter w) {
 
-    }
+      }
 
-*/
+  */
     public void visit(OriginalCall e, ScalaWriter w) {
 
     }
@@ -3077,22 +3078,22 @@ public class ScalaVisitor {
 
     }
 
-/*    public void visit(MoveStmt e, ScalaWriter w) {
+    /*    public void visit(MoveStmt e, ScalaWriter w) {
 
-    }
+        }
 
-    public void visit(NewLocExp e, ScalaWriter w) {
+        public void visit(NewLocExp e, ScalaWriter w) {
 
-    }
+        }
 
-    public void visit(ObjectGuard e, ScalaWriter w) {
+        public void visit(ObjectGuard e, ScalaWriter w) {
 
-    }
+        }
 
-    public void visit(RebindStmt e, ScalaWriter w) {
+        public void visit(RebindStmt e, ScalaWriter w) {
 
-    }
-*/
+        }
+    */
     public void visit(TraitDecl e, ScalaWriter w) {
 
     }
@@ -3136,8 +3137,8 @@ public class ScalaVisitor {
 
             for (ScalaWriter javaWriter : currentMethodWriters) {
                 LinkedList<TreeSet<VarDefinition>> oldVarsinScope = new LinkedList<>();
-                for (TreeSet<VarDefinition> node:
-                     variablesInScope) {
+                for (TreeSet<VarDefinition> node :
+                        variablesInScope) {
                     oldVarsinScope.add(new TreeSet<>(node));
                 }
 
@@ -3205,7 +3206,7 @@ public class ScalaVisitor {
 
             // System.out.println(awaitCounter);
 
-            if(as instanceof Block){
+            if (as instanceof Block) {
                 List<ScalaWriter> innerAwaits1 = continuation(((Block) as).getStmts(), new LinkedList<>(), false);
                 currentMethodWriters.addAll(innerAwaits1);
             }
@@ -3224,7 +3225,7 @@ public class ScalaVisitor {
 
                     currentMethodWriters.addAll(innerAwaits2);
                 }
-                
+
                 /*
                  * for (JavaWriter javaWriter : currentMethodWriters) {
                  * visitLabelWhile(sw, javaWriter); }
@@ -3447,10 +3448,10 @@ public class ScalaVisitor {
 
                     }
 
-                    if(ee instanceof NewExp){
-                        NewExp ne = (NewExp)ee;
+                    if (ee instanceof NewExp) {
+                        NewExp ne = (NewExp) ee;
                         String qname = ne.getType().getQualifiedName();
-                        if(checkAwait(CONSTRUCTOR,qname)) {
+                        if (checkAwait(CONSTRUCTOR, qname)) {
 
                             StringBuilder label = new StringBuilder(classes.peek());
                             label.append(currentMethod.getName());
@@ -3618,10 +3619,10 @@ public class ScalaVisitor {
                         }
                     }
 
-                    if(ee instanceof NewExp){
-                        NewExp ne = (NewExp)ee;
+                    if (ee instanceof NewExp) {
+                        NewExp ne = (NewExp) ee;
                         String qname = ne.getType().getQualifiedName();
-                        if(checkAwait(CONSTRUCTOR,qname)) {
+                        if (checkAwait(CONSTRUCTOR, qname)) {
 
                             StringBuilder label = new StringBuilder(classes.peek());
                             label.append(currentMethod.getName());
@@ -3762,26 +3763,26 @@ public class ScalaVisitor {
             /*
              * List<String> pairPar = new ArrayList<>(); pairPar.add("F");
              * pairPar.add("first"); pairPar.add("S"); pairPar.add("second");
-             * 
+             *
              * beginElementKind(jw, ElementKind.CLASS, "Pair[F,S]",
              * DEFAULT_MODIFIERS, null, null, pairPar, false); jw.endType();
-             * 
+             *
              * Set<Modifier> mods = new HashSet<>(DEFAULT_MODIFIERS);
              * mods.add(Modifier.ABSTRACT);
-             * 
+             *
              * beginElementKind(jw, ElementKind.CLASS, "Maybe[T]", mods, null,
              * null); jw.endType();
-             * 
+             *
              * beginElementKind(jw, ElementKind.OTHER, "Nothing[T]",
              * DEFAULT_MODIFIERS, "Maybe[T]", null, new ArrayList<>(), false);
-             * 
+             *
              * jw.endType();
-             * 
+             *
              * pairPar.clear(); pairPar.add("T"); pairPar.add("member");
-             * 
+             *
              * beginElementKind(jw, ElementKind.OTHER, "Just[T]",
              * DEFAULT_MODIFIERS, "Maybe[T]", null, pairPar, false);
-             * 
+             *
              * jw.endType();
              */
 
@@ -3905,12 +3906,12 @@ public class ScalaVisitor {
             w.emitField(varType, varName, new HashSet<>(), auxsw.toString());
         }
 
-        if(exp instanceof EffExp){
+        if (exp instanceof EffExp) {
             EffExp ee = (EffExp) exp;
-            if(ee instanceof NewExp){
-                NewExp ne = (NewExp)ee;
+            if (ee instanceof NewExp) {
+                NewExp ne = (NewExp) ee;
                 String qname = ne.getType().getQualifiedName();
-                if(checkAwait(CONSTRUCTOR,qname)) {
+                if (checkAwait(CONSTRUCTOR, qname)) {
 
                     StringBuilder label = new StringBuilder(classes.peek());
                     label.append(currentMethod.getName());
@@ -3930,14 +3931,14 @@ public class ScalaVisitor {
 
                     try {
                         //w.emitStatement("var %s: %s=>%s = (%s)=>%s", label + "m", type, currentMethod.type(), valueName,
-                         //       methodCall);
-                        if(fromConstructor)
-                            w.emitStatement("%s.%s = getSpawn(%s.%s, (%s)=>%s, %s.HIGH_PRIORITY, false)",LITERAL_THIS, CONS_FUT, varName, GET_CONSTRUCTOR_FUTURE, valueName, methodCall,
+                        //       methodCall);
+                        if (fromConstructor)
+                            w.emitStatement("%s.%s = getSpawn(%s.%s, (%s)=>%s, %s.HIGH_PRIORITY, false)", LITERAL_THIS, CONS_FUT, varName, GET_CONSTRUCTOR_FUTURE, valueName, methodCall,
                                     ABS_API_INTERFACE_CLASS);
                         else
 
-                        w.emitStatement("return getSpawn(%s.%s, (%s)=>%s, %s.HIGH_PRIORITY, false)", varName, GET_CONSTRUCTOR_FUTURE, valueName, methodCall,
-                                ABS_API_INTERFACE_CLASS);
+                            w.emitStatement("return getSpawn(%s.%s, (%s)=>%s, %s.HIGH_PRIORITY, false)", varName, GET_CONSTRUCTOR_FUTURE, valueName, methodCall,
+                                    ABS_API_INTERFACE_CLASS);
                         w.avoiddc = true;
                         if (!w.isScope && !w.checkAwaits) {
                             awaitCounter++;
@@ -4067,7 +4068,7 @@ public class ScalaVisitor {
 
             StringWriter tsw = new StringWriter();
             ScalaWriter tw = new ScalaWriter(tsw);
-            smc.getType().toUse().accept(this,tw);
+            smc.getType().toUse().accept(this, tw);
 
             String methodRet = tsw.toString();
             String potentialReturnType = String.format("%s[%s]", ABSFUTURE_CLASS, methodRet);
@@ -4131,8 +4132,8 @@ public class ScalaVisitor {
                     int r = awaitCall.indexOf(")");
                     if (resultVarName != null)
                         actualawaitcall.insert(actualawaitcall.indexOf(")"), (awaitCall.substring(l, r).length() > 1 ? ", " : "") + resultVarName);
-                    if(fromConstructor)
-                    w.emitStatement("%s = %s",CONS_FUT, actualawaitcall);
+                    if (fromConstructor)
+                        w.emitStatement("%s = %s", CONS_FUT, actualawaitcall);
                     else
                         w.emitStatement("return %s", actualawaitcall);
                 }
@@ -4152,7 +4153,7 @@ public class ScalaVisitor {
 
                 w.endControlFlow();
             }
-            if (!calleeId.equals(LITERAL_THIS)||callHasAwait(smc,methodName)) {
+            if (!calleeId.equals(LITERAL_THIS) || callHasAwait(smc, methodName)) {
                 awaitCounter++;
             }
         }
@@ -4347,9 +4348,9 @@ public class ScalaVisitor {
          * ABS allows for SAME naming of an interface and an implementing class.
          * To be able to properly compile this, we need to eagerly identify the
          * elements of an ABS program. Strategy of compiling:
-         * 
+         *
          * 1. Compile interfaces to separate files
-         * 
+         *
          * 2. Compile classes to separate files
          */
 
@@ -4644,12 +4645,12 @@ public class ScalaVisitor {
     protected String generateMessageSyncInvocationStatement(String target, String msgVarName, String contVarName, boolean strict) {
         final String method = GET_SPAWN;
 
-        if(fromConstructor)
-            return String.format("%s = %s.%s(%s, %s, %s.HIGH_PRIORITY, %s)",CONS_FUT, target, method, msgVarName, contVarName,
+        if (fromConstructor)
+            return String.format("%s = %s.%s(%s, %s, %s.HIGH_PRIORITY, %s)", CONS_FUT, target, method, msgVarName, contVarName,
                     ABS_API_INTERFACE_CLASS, strict);
         else
-        return String.format("return %s.%s(%s, %s, %s.HIGH_PRIORITY, %s)", target, method, msgVarName, contVarName,
-                ABS_API_INTERFACE_CLASS, strict);
+            return String.format("return %s.%s(%s, %s, %s.HIGH_PRIORITY, %s)", target, method, msgVarName, contVarName,
+                    ABS_API_INTERFACE_CLASS, strict);
         // if (!isDefined) {
         // return String.format("%s = %s.%s(%s, %s)", responseVarName, target,
         // method, msgVarName, contVarName);
@@ -4750,14 +4751,11 @@ public class ScalaVisitor {
                 Type bt = ((BoundedType) tu).getBoundType();
                 if (bt != null && bt.toUse() != null) {
                     bt.toUse().accept(this, new ScalaWriter(typew));
-                }
-                else
+                } else
                     typew.append(tu.getQualifiedName());
-            }
-            else
+            } else
                 typew.append(tu.getQualifiedName());
-        }
-        else {
+        } else {
             tu.toUse().accept(this, new ScalaWriter(typew));
         }
         String qname = typew.toString();
@@ -4769,12 +4767,12 @@ public class ScalaVisitor {
         String key = qname + "." + methodName;
         if (programMethods.containsKey(key))
             return programMethods.get(key).containsAwait();
-        else{
-            int endPoint = qname.lastIndexOf('.')+1;
+        else {
+            int endPoint = qname.lastIndexOf('.') + 1;
             StringBuilder k = new StringBuilder(qname.substring(0, endPoint));
             String coll = translateDataColl(qname.substring(endPoint));
             k.append(coll);
-            k.append("."+methodName);
+            k.append("." + methodName);
             if (programMethods.containsKey(k.toString()))
                 return programMethods.get(k.toString()).containsAwait();
         }
@@ -4822,7 +4820,7 @@ public class ScalaVisitor {
         // System.out.println("amc calee writer "+ auxw.duplicateReplacements);
         amc.getCallee().accept(this, auxw);
         String calleeId = auxsw.toString();
-        String variable = "Actor"+Math.abs(calleeId.hashCode());
+        String variable = "Actor" + Math.abs(calleeId.hashCode());
         try {
             w.emitStatement("val %s = %s", variable, calleeId);
         } catch (IOException e) {

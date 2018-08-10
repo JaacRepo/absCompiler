@@ -51,7 +51,7 @@ public class ScalaBackend extends Main {
     public static void printUsage() {
         System.out.println("Scala Backend (-scala):");
         System.out.println("  -scala <source.abs>    the source abs file");
-        System.out.println("  [-d] [<dir>]     generate files to <dir>");
+        System.out.println("  [-dep]     generate with DC Support");
         System.out.println();
     }
 
@@ -78,7 +78,11 @@ public class ScalaBackend extends Main {
                 // remainingArgs.add(source);
                 // }
                 // }
-            } else {
+
+            } else if(arg.equals("-dep")){
+                ScalaVisitor.withDC=true;
+            }
+            else {
                 source = arg;
                 remainingArgs.add(arg);
             }
@@ -105,6 +109,8 @@ public class ScalaBackend extends Main {
                     pack.getName(), outputDirPath);
             final ScalaVisitor v = new ScalaVisitor(pack.getName(), model, supplier, typeTranslator,
                     outputDirPath);
+
+
 
             final Path packagePath = resolveOutputDirectory(pack.getName(), outputDirPath);
             Files.createDirectories(packagePath);
