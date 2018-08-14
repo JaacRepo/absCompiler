@@ -8,23 +8,8 @@ import java.io.IOException;
 
 import java.io.StringWriter;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.EnumMap;
-import java.util.EnumSet;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.HashSet;
-import java.util.LinkedList;
+import java.util.*;
 import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Random;
-import java.util.Set;
-import java.util.Stack;
-import java.util.TreeSet;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
@@ -34,7 +19,9 @@ import java.util.logging.Logger;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
 
+import abs.backend.tests.AbsASTBuilderUtil;
 import abs.common.CompilerUtils;
+import abs.common.ListUtils;
 import abs.frontend.typechecker.BoundedType;
 import abs.frontend.typechecker.InterfaceType;
 import com.google.common.base.StandardSystemProperty;
@@ -698,6 +685,7 @@ public class ScalaVisitor {
 
                 //System.out.println("Building method for " + name);
                 for (Stmt annStm : mcb.getBlock().getStmts()) {
+
                     if (!w.avoiddc)
                         annStm.accept(this, w);
 
@@ -1693,6 +1681,8 @@ public class ScalaVisitor {
 
     public void visit(Block b, ScalaWriter w) {
 
+
+
         TreeSet<VarDefinition> blockScope = new TreeSet<>();
         variablesInScope.push(blockScope);
         if (w.continuationLevel != -5)
@@ -1717,16 +1707,42 @@ public class ScalaVisitor {
         // System.out.println("new block " + w.duplicateReplacements);
         StringWriter scopesw = new StringWriter();
         ScalaWriter scopew = new ScalaWriter(scopesw);
+        TreeMap<Integer, Stmt> annHandlers = new TreeMap<>(new Comparator<Integer>() {
+            @Override
+            public int compare(Integer integer, Integer t1) {
+                return t1-integer;
+            }
+        });
         for (Stmt stm : b.getStmts()) {
             //TODO: stm.getAnnotationList(), check for "ABS.DC.COST"
             //TODO: if cost is not null, decrement available cost, if > 0 continue, else decrement all, and tell the DC that I need more.
             //TODO: thisDC has to be generated spearately by the Builtin visitor node.
             //TODO:
+            if(withDC){
+                PureExp cost = CompilerUtils.getAnnotationValueFromName(stm.getAnnotationList(), "ABS.DC.Cost");
+                if (cost != null) {
+                    if (!currentMethod.containsAwait()) {
+                        currentMethod.setContainsAwait(true);
+                        awaitsDetected = true;
+                    }
+
+                    DataConstructorExp rtype = new DataConstructorExp("Speed", new abs.frontend.ast.List<>());
+
+                    Call acquire = AbsASTBuilderUtil.getCall(AbsASTBuilderUtil.getFnApp("thisDC"), "acquireResource", true, cost.treeCopyNoTransform(),rtype);
+
+                    Stmt s = AbsASTBuilderUtil.getExpStmt(acquire);
+                    annHandlers.put(b.getStmts().getIndexOfChild(stm), s);
+                }
+            }
 
             if (!w.avoiddc)
                 stm.accept(this, w);
             else
                 stm.accept(this, scopew);
+        }
+        for (Integer k: annHandlers.keySet()
+                ) {
+            b.getStmts().insertChild(annHandlers.get(k),k);
         }
         w.avoiddc = false;
         // System.out.println(variablesInScope);
@@ -1846,7 +1862,9 @@ public class ScalaVisitor {
         auxw.continuationLevel = w.continuationLevel;
         auxw.duplicateReplacements = w.duplicateReplacements;
 
-        smc.getMethodSig().getReturnType().accept(this, auxw);
+        MethodSig sig = smc.getMethodSig();
+        Access r = sig.getReturnType();
+        r.accept(this, auxw);
 
         try {
             visitSyncMethodCall_Sync(smc, auxsw.toString(), null, false, w);
@@ -3322,6 +3340,39 @@ public class ScalaVisitor {
                 awaitCounter++;
             }
 
+//            if(withDC){
+//                PureExp cost = CompilerUtils.getAnnotationValueFromName(as.getAnnotationList(), "ABS.DC.Cost");
+//                if (cost != null) {
+//                    StringBuilder label = new StringBuilder(classes.peek());
+//                    label.append(currentMethod.getName());
+//                    label.append("Await" + (awaitCounter));
+//
+//                    StringWriter auxsw = new StringWriter();
+//                    ScalaWriter auxw = new ScalaWriter(auxsw);
+//                    auxw.continuationLevel = -1;
+//
+//                    try {
+//                        String returnType = currentMethod.type() != null ? currentMethod.type() : "void";
+//                        List<String> parameters = new ArrayList<>();
+//                        for (TreeSet<VarDefinition> defs : variablesInScope) {
+//                            for (VarDefinition varDefinition : defs) {
+//                                parameters.add(varDefinition.getType());
+//
+//                                parameters.add(getDuplicate(varDefinition.getName(), auxw));
+//                            }
+//                        }
+//                        startContinuation(label, auxw, returnType, parameters);
+//
+//                    } catch (IOException e) {
+//                        // TODO Auto-generated catch block
+//                        e.printStackTrace();
+//                    }
+//                    currentMethodLabels.add(auxsw);
+//                    currentMethodWriters.add(auxw);
+//                    awaitCounter++;
+//                }
+//            }
+
             if (as instanceof ExpressionStmt) {
                 ExpressionStmt exp = (ExpressionStmt) as;
                 if (exp.getExp() instanceof EffExp) {
@@ -3767,8 +3818,34 @@ public class ScalaVisitor {
     }
 
     public void visitMethodBody(Block mcb, ScalaWriter notNeeded) {
+
+        TreeMap<Integer, Stmt> annHandlers = new TreeMap<>(new Comparator<Integer>() {
+            @Override
+            public int compare(Integer integer, Integer t1) {
+                return t1-integer;
+            }
+        });
         for (Stmt annStm : mcb.getStmts()) {
+            if(withDC){
+                PureExp cost = CompilerUtils.getAnnotationValueFromName(annStm.getAnnotationList(), "ABS.DC.Cost");
+                if (cost != null) {
+                    if (!currentMethod.containsAwait()) {
+                        currentMethod.setContainsAwait(true);
+                        awaitsDetected = true;
+                    }
+                    DataConstructorExp rtype = new DataConstructorExp("Speed", new abs.frontend.ast.List<>());
+                    Call acquire = AbsASTBuilderUtil.getCall(AbsASTBuilderUtil.getFnApp("thisDC"), "acquireResource", true, cost.treeCopyNoTransform(),rtype);
+
+                    Stmt s = AbsASTBuilderUtil.getExpStmt(acquire);
+                    annHandlers.put(mcb.getStmts().getIndexOfChild(annStm), s);
+                }
+            }
             annStm.accept(this, notNeeded);
+
+        }
+        for (Integer k: annHandlers.keySet()
+                ) {
+            mcb.getStmts().insertChild(annHandlers.get(k),k);
         }
     }
 
@@ -3802,7 +3879,7 @@ public class ScalaVisitor {
              * beginElementKind(jw, ElementKind.OTHER, "Just[T]",
              * DEFAULT_MODIFIERS, "Maybe[T]", null, pairPar, false);
              *
-             * jw.endType();
+             * jw.endType();nn//
              */
 
         } catch (IOException e) {
