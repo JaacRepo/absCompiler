@@ -1899,7 +1899,7 @@ public class ScalaVisitor {
                 }
                 else {
                     if (!withDC)
-                        w.emit("new " + name + "(this " + (parametersString.length() == 0 ? "" : ", ") + parametersString
+                        w.emit("new " + name + "(null " + (parametersString.length() == 0 ? "" : ", ") + parametersString
                                 + ")");
                     else {
                         if (dc == null)
