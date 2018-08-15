@@ -43,15 +43,22 @@ public class ScalaVisitor {
     public static final String INSTANCE_OF = "asInstanceOf";
     public static final String ADD_DC = "addDC";
     public static final String TAS = "TimedActorSystem";
+    public static final String ACQUIRE_RESOURCE = "acquireResource";
+    public static final String THIS_DC = "thisDC";
     public static Boolean withDC = false;
     public static final String DEPLOYMENT_COMPONENT = "DeploymentComponent";
     public static final String MOVE_TO_COG = "moveToCOG";
     public static final String SET_DC = "setDC";
     public static final String CLASS_DC = "ClassDeploymentComponent";
     private boolean fromConstructor = false;
+    private int firstDCPass = 0;
+
 
     private boolean hasRun = false;
 
+
+    private static MethodImpl ACQUIRE=null;
+    private static FunctionDecl BUILTIN_THIS_DC=null;
     static enum AbsElementType {
         /**
          * Equivalent to Java's {@link ElementKind#INTERFACE}
@@ -479,6 +486,7 @@ public class ScalaVisitor {
 
     public void preVisit(ModuleDecl m) {
         buildProgramDeclarationTypes(m);
+        firstDCPass=0;
         do {
             awaitsDetected = false;
             ScalaWriter notNeeded = new ScalaWriter(true, new StringWriter(), true);
@@ -496,6 +504,7 @@ public class ScalaVisitor {
 
             modules.pop();
             System.out.println("DONE Checking awaits ");
+            firstDCPass++;
 
         } while (awaitsDetected);
 
@@ -612,6 +621,11 @@ public class ScalaVisitor {
 
                 String returnType = String.format("%s[%s]", ABSFUTURE_CLASS, auxsw.toString());
                 String name = ms.getName().equals(METHOD_GET) ? "get" : ms.getName();
+
+                if(name.equals(ACQUIRE_RESOURCE))
+                    if(this.classes.peek().equals(CLASS_DC))
+                        ACQUIRE=mcb;
+
                 if (name.equals("run")) {
                     System.out.println("Found run in" + currentClass());
                     hasRun = true;
@@ -1134,7 +1148,8 @@ public class ScalaVisitor {
             }
             FunctionDef fbody = functionDecl.getFunctionDef();
             if (fbody instanceof BuiltinFunctionDef) {
-                if (methodName.equals("thisDC")) {
+                if (methodName.equals(THIS_DC)) {
+                    BUILTIN_THIS_DC=functionDecl;
                     parameters.add(ABS_API_ACTOR_CLASS);
                     parameters.add(ABS_API_ACTOR_CLASS.toLowerCase());
 
@@ -1148,8 +1163,10 @@ public class ScalaVisitor {
 
             if (fbody instanceof BuiltinFunctionDef) {
                 if (methodName.equals("thisDC")) {
-                    w.emitStatement("return %s", LITERAL_NULL);
-                    //w.emitStatement("return %s.%s.%s[%s]", ABS_API_ACTOR_CLASS.toLowerCase(),GET_DC, INSTANCE_OF, DEPLOYMENT_COMPONENT);
+                    if(!withDC)
+                        w.emitStatement("return %s", LITERAL_NULL);
+                    else
+                        w.emitStatement("return %s.%s.%s[%s]", ABS_API_ACTOR_CLASS.toLowerCase(),GET_DC, INSTANCE_OF, DEPLOYMENT_COMPONENT);
                 }
 
             } else if (fbody instanceof ExpFunctionDef) {
@@ -1231,8 +1248,10 @@ public class ScalaVisitor {
                     parameters.toArray(new String[0]));
             if (fbody instanceof BuiltinFunctionDef) {
                 if (methodName.equals("thisDC")) {
+                    if(!withDC)
                     w.emitStatement("return %s", LITERAL_NULL);
-                    //w.emitStatement("return %s.%s.%s[%s]", ABS_API_ACTOR_CLASS.toLowerCase(),GET_DC, INSTANCE_OF, DEPLOYMENT_COMPONENT);
+                    else
+                        w.emitStatement("return %s.%s.%s[%s]", ABS_API_ACTOR_CLASS.toLowerCase(),GET_DC, INSTANCE_OF, DEPLOYMENT_COMPONENT);
                 }
 
             } else if (fbody instanceof ExpFunctionDef) {
@@ -1718,7 +1737,7 @@ public class ScalaVisitor {
             //TODO: if cost is not null, decrement available cost, if > 0 continue, else decrement all, and tell the DC that I need more.
             //TODO: thisDC has to be generated spearately by the Builtin visitor node.
             //TODO:
-            if(withDC){
+            if(withDC&&firstDCPass==0){
                 PureExp cost = CompilerUtils.getAnnotationValueFromName(stm.getAnnotationList(), "ABS.DC.Cost");
                 if (cost != null) {
                     if (!currentMethod.containsAwait()) {
@@ -1726,11 +1745,14 @@ public class ScalaVisitor {
                         awaitsDetected = true;
                     }
 
+                    List<PureExp> pars = new LinkedList<>();
                     DataConstructorExp rtype = new DataConstructorExp("Speed", new abs.frontend.ast.List<>());
+                    pars.add(cost.treeCopyNoTransform());
+                    pars.add(rtype);
 
-                    Call acquire = AbsASTBuilderUtil.getCall(AbsASTBuilderUtil.getFnApp("thisDC"), "acquireResource", true, cost.treeCopyNoTransform(),rtype);
-
-                    Stmt s = AbsASTBuilderUtil.getExpStmt(acquire);
+                    //Call acquire = AbsASTBuilderUtil.getCall(AbsASTBuilderUtil.getFnApp("thisDC"), "acquireResource", false, cost.treeCopyNoTransform(),rtype);
+                    AwaitAsyncCall aws = new AwaitAsyncCall(AbsASTBuilderUtil.getFnApp("thisDC"), "acquireResource", ListUtils.toASTList(pars));
+                    Stmt s = AbsASTBuilderUtil.getExpStmt(aws);
                     annHandlers.put(b.getStmts().getIndexOfChild(stm), s);
                 }
             }
@@ -1740,9 +1762,11 @@ public class ScalaVisitor {
             else
                 stm.accept(this, scopew);
         }
-        for (Integer k: annHandlers.keySet()
-                ) {
-            b.getStmts().insertChild(annHandlers.get(k),k);
+        if(withDC&&firstDCPass==0) {
+            for (Integer k : annHandlers.keySet()
+                    ) {
+                b.getStmts().insertChild(annHandlers.get(k), k);
+            }
         }
         w.avoiddc = false;
         // System.out.println(variablesInScope);
@@ -1862,6 +1886,7 @@ public class ScalaVisitor {
         auxw.continuationLevel = w.continuationLevel;
         auxw.duplicateReplacements = w.duplicateReplacements;
 
+        System.out.println(smc.getMethod()+" "+smc.getCallee()+ " "+smc.getMethodSig());
         MethodSig sig = smc.getMethodSig();
         Access r = sig.getReturnType();
         r.accept(this, auxw);
@@ -1906,10 +1931,9 @@ public class ScalaVisitor {
                 else
                     w.emit("new " + name + "(this, getDc(), " + parametersString + ")");
             } else {
-
                 if (isNewDC) {
                     if(withDC)
-                    w.emit("new " + name + "(null, null, " +  parametersString + ")");
+                        w.emit("new " + name + "(null, null, " +  parametersString + ")");
                     else
                         w.emit("new " + name + "(null " + (parametersString.length() == 0 ? "" : ", ") + parametersString
                                 + ")");
@@ -2166,7 +2190,7 @@ public class ScalaVisitor {
             if (cons.hasParam()) {
                 w.emit(String.join(COMMA_SPACE, parameters));
             }
-            w.emit(functionName.equals("thisDC") ? "this" : "" +
+            w.emit((functionName.equals("ABS.DC.Functions.thisDC") ? "this" : "") +
                     ")" /*+ (functionName.equals("toString") ? ".toString()" : "")*/);
 
         } catch (IOException e) {
@@ -3826,26 +3850,32 @@ public class ScalaVisitor {
             }
         });
         for (Stmt annStm : mcb.getStmts()) {
-            if(withDC){
+            if(withDC&&firstDCPass==0){
                 PureExp cost = CompilerUtils.getAnnotationValueFromName(annStm.getAnnotationList(), "ABS.DC.Cost");
                 if (cost != null) {
                     if (!currentMethod.containsAwait()) {
                         currentMethod.setContainsAwait(true);
                         awaitsDetected = true;
                     }
+                    List<PureExp> pars = new LinkedList<>();
                     DataConstructorExp rtype = new DataConstructorExp("Speed", new abs.frontend.ast.List<>());
-                    Call acquire = AbsASTBuilderUtil.getCall(AbsASTBuilderUtil.getFnApp("thisDC"), "acquireResource", true, cost.treeCopyNoTransform(),rtype);
+                    pars.add(cost.treeCopyNoTransform());
+                    pars.add(rtype);
 
-                    Stmt s = AbsASTBuilderUtil.getExpStmt(acquire);
+                    //Call acquire = AbsASTBuilderUtil.getCall(AbsASTBuilderUtil.getFnApp("thisDC"), "acquireResource", false, cost.treeCopyNoTransform(),rtype);
+                    AwaitAsyncCall aws = new AwaitAsyncCall(AbsASTBuilderUtil.getFnApp("thisDC"), "acquireResource", ListUtils.toASTList(pars));
+                    Stmt s = AbsASTBuilderUtil.getExpStmt(aws);
                     annHandlers.put(mcb.getStmts().getIndexOfChild(annStm), s);
                 }
             }
             annStm.accept(this, notNeeded);
 
         }
-        for (Integer k: annHandlers.keySet()
-                ) {
-            mcb.getStmts().insertChild(annHandlers.get(k),k);
+        if(withDC&&firstDCPass==0) {
+            for (Integer k : annHandlers.keySet()
+                    ) {
+                mcb.getStmts().insertChild(annHandlers.get(k), k);
+            }
         }
     }
 
@@ -4012,6 +4042,14 @@ public class ScalaVisitor {
             EffExp ee = (EffExp) exp;
             if (ee instanceof NewExp) {
                 NewExp ne = (NewExp) ee;
+
+                Stmt stmt = CompilerUtils.findStmtForExpression(ne);
+                boolean isNewDC = ne.getType().isDeploymentComponentType();
+
+                if(isNewDC&&withDC){
+                    w.emitStatement("%s.%s(%s.asInstanceOf[%s])", TAS, ADD_DC, varName, CLASS_DC);
+                }
+
                 String qname = ne.getType().getQualifiedName();
                 if (checkAwait(CONSTRUCTOR, qname)) {
 

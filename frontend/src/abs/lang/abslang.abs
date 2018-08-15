@@ -799,6 +799,7 @@ interface DeploymentComponent {
     // Shut down deployment component.  Semantics of job termination / object
     // invalidation upon shutdown are currently under discussion.
     Bool shutdown();
+    Unit acquireResource(Rat amount, Resourcetype rtype);
 }
 
 interface DeploymentComponentForCloudProvider extends DeploymentComponent {
