@@ -4046,9 +4046,9 @@ public class ScalaVisitor {
                 Stmt stmt = CompilerUtils.findStmtForExpression(ne);
                 boolean isNewDC = ne.getType().isDeploymentComponentType();
 
-                if(isNewDC&&withDC){
-                    w.emitStatement("%s.%s(%s.asInstanceOf[%s])", TAS, ADD_DC, varName, CLASS_DC);
-                }
+//                if(isNewDC&&withDC){
+//                    w.emitStatement("%s.%s(%s.asInstanceOf[%s])", TAS, ADD_DC, varName, CLASS_DC);
+//                }
 
                 String qname = ne.getType().getQualifiedName();
                 if (checkAwait(CONSTRUCTOR, qname)) {
